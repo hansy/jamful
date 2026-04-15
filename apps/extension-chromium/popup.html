@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jamful</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        padding: 12px;
+        width: 360px;
+        min-height: 200px;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0 0 10px;
+      }
+      label {
+        display: block;
+        font-size: 0.75rem;
+        margin-top: 8px;
+        color: #444;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 4px;
+        padding: 6px 8px;
+      }
+      button {
+        margin-top: 12px;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0 0;
+      }
+      li {
+        padding: 8px 0;
+        border-bottom: 1px solid #eee;
+        font-size: 0.85rem;
+      }
+      .muted {
+        color: #666;
+        font-size: 0.75rem;
+      }
+      .err {
+        color: #b00020;
+        font-size: 0.8rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Jamful</h1>
+    <div id="root"></div>
+    <script type="module" src="./src/popup/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "@jamful/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env-file .env.local",
+    "deploy": "wrangler deploy",
+    "cf-types": "wrangler types --env-file .env.local",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jamful/shared": "workspace:*",
+    "jose": "^6.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.28.0"
+  }
+}

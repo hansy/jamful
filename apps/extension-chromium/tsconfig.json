@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["chrome"],
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@jamful/shared": ["../../packages/shared/src/index.ts"],
+      "@jamful/extension-core": ["../../packages/extension-core/src/index.ts"],
+      "@jamful/extension-api": ["../../packages/extension-api/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "vite.config.ts"]
+}

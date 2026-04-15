@@ -175,14 +175,14 @@ Notify when:
 ```
 Notification {
   id: string
-  viewer_user_id: string
+  recipient_user_id: string
   friend_user_id: string
   session_id: string
   created_at: timestamp
 }
 ```
 
-Server ensures no duplicate notifications per `(viewer, session_id)`.
+Server ensures no duplicate notifications per `(recipient_user_id, session_id)`.
 
 ---
 
@@ -291,8 +291,8 @@ Flow for unknown domain:
     - Handles heartbeat → start/update session
     - Emits `session_started` events when a new session begins
 
-  - `ViewerInboxDO(viewerId)`
-    - Stores per-viewer notifications
+  - `UserInboxDO(recipientUserId)`
+    - Stores per-recipient notifications (the user who should see the alert)
     - Maintains unread count + cursor
     - Returns notifications since cursor on poll
 
@@ -301,12 +301,10 @@ Flow for unknown domain:
   - Producer: `UserPresenceDO` on new session
   - Consumer:
     - Resolves followers of `friend_user_id`
-    - Enqueues notifications into each `ViewerInboxDO(viewerId)`
+    - Enqueues notifications into each `UserInboxDO(recipientUserId)`
 
 - **KV (global cache)**
-  - Internal synced game registry (id, name, url, icon_url)
-  - Canonical source is `https://vibej.am/2026`
-  - Updated by internal sync job
+  - Game registry (id, name, url, icon_url) — populated from repo `data/seedGames.json` via `scripts/build-registry.ts` and `wrangler kv` (no runtime fetch)
   - Optional: feature flags / config
   - Read-heavy, low-latency global access
 
@@ -341,12 +339,12 @@ Session {
 }
 ```
 
-### Notification (in `ViewerInboxDO` storage)
+### Notification (in `UserInboxDO` storage)
 
 ```ts
 Notification {
   id: string
-  viewer_user_id: string
+  recipient_user_id: string
   friend_user_id: string
   session_id: string
   game_id: string
@@ -357,8 +355,8 @@ Notification {
 
 ### Follow Graph (v0)
 
-- Materialized per followed user (e.g., stored with `UserPresenceDO` or a dedicated DO):
-  - `followers_of:{user_id} -> Set<viewer_user_id>`
+- Materialized per followed user (e.g., stored in KV):
+  - `followers:{user_id} -> Set<recipient_user_id>` (users who follow `user_id` and should receive notifications when they play)
 
 - Built from Twitter/X sync on sign-in
 
@@ -372,9 +370,8 @@ Notification {
 
 ### Registry
 
-- No public registry endpoint in v0
-- Internal sync process pulls supported games from `https://vibej.am/2026`
-- Worker reads from KV internally
+- Authenticated `GET /games` (not a public anonymous catalog in v0)
+- Registry JSON is built from `data/seedGames.json` and written to KV (`registry:v1`); worker reads only from KV
 
 ### Presence
 
@@ -390,7 +387,7 @@ Notification {
 ### Notifications
 
 - `GET /notifications?cursor=...`
-  - Worker routes to `ViewerInboxDO(viewerId)`
+  - Worker routes to `UserInboxDO(recipientUserId)`
   - Returns new notifications + next cursor
 
 ---
@@ -406,7 +403,7 @@ Notification {
 
 5. Queue consumer:
    - Fetches followers of `userId`
-   - Enqueues notifications to each `ViewerInboxDO(viewerId)`
+   - Enqueues notifications to each `UserInboxDO(recipientUserId)`
 
 6. Extension polls `/notifications`
 7. Inbox DO returns unseen notifications
@@ -520,7 +517,7 @@ repo/
 
   infra/
     cloudflare/
-      wrangler.toml
+      wrangler.jsonc
       migrations/
 ```
 
@@ -560,17 +557,13 @@ repo/
 
 ### Must Have
 
-- Auth
-- Internal game sync from `https://vibej.am/2026`
-- KV-backed internal registry
-- URL detection
-- Auth
-- Game registry (KV)
+- Auth (Twitter/X target; dev auth for local testing)
+- Game registry in KV (from `data/seedGames.json` → `registry:v1`)
 - URL detection
 - Heartbeat (60s)
-- Presence DO
+- `UserPresenceDO`
 - Queue fanout
-- Viewer inbox DO
+- `UserInboxDO`
 - Notification polling
 - Popup feed UI
 
@@ -601,7 +594,7 @@ System model:
 - Sends heartbeat to Worker
 - `UserPresenceDO` maintains session state
 - New sessions are fanned out via Queue
-- `ViewerInboxDO` stores per-viewer notifications
+- `UserInboxDO` stores per-recipient notifications
 - Extension polls and displays updates
 
 Goal:

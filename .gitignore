@@ -1,7 +1,9 @@
 node_modules
 .bun
+dist
 *.log
 .DS_Store
 .env
 .env.*
 !.env.example
+!**/.env.example
