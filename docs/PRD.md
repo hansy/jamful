@@ -305,7 +305,7 @@ Flow for unknown domain:
 
 - **KV (global cache)**
   - Internal synced game registry (id, name, url, icon_url)
-  - Canonical source is `https://vibej.am`
+  - Canonical source is `https://vibej.am/2026`
   - Updated by internal sync job
   - Optional: feature flags / config
   - Read-heavy, low-latency global access
@@ -373,7 +373,7 @@ Notification {
 ### Registry
 
 - No public registry endpoint in v0
-- Internal sync process pulls supported games from `https://vibej.am`
+- Internal sync process pulls supported games from `https://vibej.am/2026`
 - Worker reads from KV internally
 
 ### Presence
@@ -561,7 +561,7 @@ repo/
 ### Must Have
 
 - Auth
-- Internal game sync from `https://vibej.am`
+- Internal game sync from `https://vibej.am/2026`
 - KV-backed internal registry
 - URL detection
 - Auth
