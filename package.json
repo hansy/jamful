@@ -6,10 +6,11 @@
   "scripts": {
     "build": "bun run build:worker && bun run build:extension",
     "build:worker": "bun run --cwd apps/worker deploy -- --dry-run --env-file .env.local",
-    "build:extension": "bun run --cwd apps/extension-chromium build",
+    "build:extension": "bun run --cwd apps/extension build",
     "registry": "bun scripts/build-registry.ts",
     "dev:worker": "bun run --cwd apps/worker dev",
-    "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/extension-core/tsconfig.json && tsc -p packages/extension-api/tsconfig.json && tsc -p apps/worker/tsconfig.json && tsc -p apps/extension-chromium/tsconfig.json && tsc -p scripts/tsconfig.json",
+    "dev:extension": "bun run --cwd apps/extension dev",
+    "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/extension-core/tsconfig.json && tsc -p packages/extension-api/tsconfig.json && tsc -p apps/worker/tsconfig.json && tsc -p apps/extension/tsconfig.json && tsc -p scripts/tsconfig.json",
     "cf-types": "bun run --cwd apps/worker cf-types"
   },
   "devDependencies": {

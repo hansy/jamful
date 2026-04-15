@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev --env-file .env.local",
     "deploy": "wrangler deploy",
-    "cf-types": "wrangler types --env-file .env.local",
+    "cf-types": "wrangler types --env-file .env.cf-generate",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

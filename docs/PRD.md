@@ -19,7 +19,7 @@ A browser extension that detects when users are playing web games and shows real
 
 ### 3.1 Authentication
 
-- User logs in via Twitter/X through extension
+- User logs in via X through extension
 - Extension stores session token (issued by backend)
 
 ---
@@ -274,7 +274,7 @@ Flow for unknown domain:
 ### Components
 
 - **Workers (API edge)**
-  - Auth (Twitter/X)
+  - Auth (X)
   - Game registry endpoint
   - Presence endpoints (heartbeat)
   - Feed + notifications endpoints
@@ -358,7 +358,7 @@ Notification {
 - Materialized per followed user (e.g., stored in KV):
   - `followers:{user_id} -> Set<recipient_user_id>` (users who follow `user_id` and should receive notifications when they play)
 
-- Built from Twitter/X sync on sign-in
+- Built from X API sync on sign-in (following list)
 
 ---
 
@@ -366,7 +366,8 @@ Notification {
 
 ### Auth
 
-- `POST /auth/twitter` → returns session token
+- `POST /auth/x/authorize-url` → returns X authorize URL (PKCE)
+- `POST /auth/x/token` → exchanges code for Jamful session token
 
 ### Registry
 
@@ -470,19 +471,12 @@ Flow for unknown domain:
 ```bash
 repo/
   apps/
-    extension-chromium/
-      src/
-        background/
+    extension/
+      entrypoints/
+        background.ts
         popup/
-        content/
-      manifest.json
-
-    extension-firefox/
-      src/
-        background/
-        popup/
-        content/
-      manifest.json
+      wxt.config.ts
+      # WXT: `wxt build -b chrome|firefox|edge|safari` from one codebase
 
     extension-safari/
       src/
@@ -557,7 +551,7 @@ repo/
 
 ### Must Have
 
-- Auth (Twitter/X target; dev auth for local testing)
+- Auth (X OAuth 2.0 with PKCE)
 - Game registry in KV (from `data/seedGames.json` → `registry:v1`)
 - URL detection
 - Heartbeat (60s)

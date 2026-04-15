@@ -5,6 +5,15 @@ export type AuthTokens = {
   token_type: "Bearer";
 };
 
+export type XAuthorizeUrlResponse = {
+  authorization_url: string;
+};
+
+export type XTokenResponse = AuthTokens & {
+  user_id: string;
+  x_username: string;
+};
+
 export class JamfulApiClient {
   constructor(
     private baseUrl: string,
@@ -51,13 +60,29 @@ export class JamfulApiClient {
     return this.request<NotificationsPollResult>(`/notifications${q}`);
   }
 
-  async devAuth(body: {
-    user_id: string;
-    display_name: string;
-    avatar_url?: string;
-    following?: string[];
-  }): Promise<AuthTokens & { user_id: string }> {
-    return this.request("/auth/dev", {
+  async getXAuthorizationUrl(body: {
+    code_challenge: string;
+    state: string;
+    redirect_uri: string;
+  }): Promise<XAuthorizeUrlResponse> {
+    return this.request<XAuthorizeUrlResponse>("/auth/x/authorize-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code_challenge: body.code_challenge,
+        state: body.state,
+        redirect_uri: body.redirect_uri,
+      }),
+      skipAuth: true,
+    });
+  }
+
+  async exchangeXToken(body: {
+    code: string;
+    code_verifier: string;
+    redirect_uri: string;
+  }): Promise<XTokenResponse> {
+    return this.request<XTokenResponse>("/auth/x/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

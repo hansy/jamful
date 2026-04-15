@@ -1,4 +1,11 @@
 import type { FeedEntry } from "@jamful/shared";
+import {
+  buildXAuthorizationUrl,
+  exchangeXAuthorizationCode,
+  fetchXFollowingUserIds,
+  fetchXMe,
+  isAllowedExtensionRedirectUri,
+} from "./auth-x";
 import { signAccessToken, verifyAccessToken } from "./auth-jwt";
 import { gameById, getRegistryGames } from "./games";
 import {
@@ -51,50 +58,101 @@ export default {
       return new Response(null, { headers: corsHeaders(origin) });
     }
 
-    if (path === "/auth/twitter" && request.method === "POST") {
-      return json(
-        {
-          error: "not_implemented",
-          message: "Use POST /auth/dev in development or configure X OAuth credentials.",
-        },
-        501,
-        origin,
-      );
-    }
-
-    if (path === "/auth/dev" && request.method === "POST") {
-      if (String(env.ENVIRONMENT) === "production") {
-        return json({ error: "forbidden" }, 403, origin);
+    if (path === "/auth/x/authorize-url" && request.method === "POST") {
+      const clientId = env.X_CLIENT_ID;
+      if (!clientId) {
+        return json({ error: "misconfigured", message: "X_CLIENT_ID is not set" }, 503, origin);
       }
       const body = (await request.json()) as {
-        user_id?: string;
-        display_name?: string;
-        avatar_url?: string;
-        following?: string[];
+        code_challenge?: string;
+        state?: string;
+        redirect_uri?: string;
       };
-      if (!body.user_id || !body.display_name) {
-        return json({ error: "user_id and display_name required" }, 400, origin);
+      if (!body.code_challenge || !body.state || !body.redirect_uri) {
+        return json(
+          { error: "invalid_request", message: "code_challenge, state, redirect_uri required" },
+          400,
+          origin,
+        );
       }
-      await putProfile(env.JAMFUL_KV, body.user_id, {
-        name: body.display_name,
-        avatar_url: body.avatar_url ?? "",
+      if (!isAllowedExtensionRedirectUri(body.redirect_uri)) {
+        return json(
+          { error: "invalid_redirect_uri", message: "redirect_uri must be a https://*.chromiumapp.org URL" },
+          400,
+          origin,
+        );
+      }
+      const authorization_url = buildXAuthorizationUrl({
+        clientId,
+        redirectUri: body.redirect_uri,
+        state: body.state,
+        codeChallenge: body.code_challenge,
       });
-      await setFollowingGraph(env.JAMFUL_KV, body.user_id, body.following ?? []);
-      const payload: JWTPayload = {
-        sub: body.user_id,
-        name: body.display_name,
-        av: body.avatar_url ?? "",
+      return json({ authorization_url }, 200, origin);
+    }
+
+    if (path === "/auth/x/token" && request.method === "POST") {
+      const clientId = env.X_CLIENT_ID;
+      const clientSecret = env.X_CLIENT_SECRET;
+      if (!clientId || !clientSecret) {
+        return json(
+          { error: "misconfigured", message: "X_CLIENT_ID and X_CLIENT_SECRET must be set" },
+          503,
+          origin,
+        );
+      }
+      const body = (await request.json()) as {
+        code?: string;
+        code_verifier?: string;
+        redirect_uri?: string;
       };
-      const access_token = await signAccessToken(payload, env.JWT_SECRET, 60 * 60 * 24 * 30);
-      return json(
-        {
-          access_token,
-          token_type: "Bearer",
-          user_id: body.user_id,
-        },
-        200,
-        origin,
-      );
+      if (!body.code || !body.code_verifier || !body.redirect_uri) {
+        return json(
+          { error: "invalid_request", message: "code, code_verifier, redirect_uri required" },
+          400,
+          origin,
+        );
+      }
+      if (!isAllowedExtensionRedirectUri(body.redirect_uri)) {
+        return json(
+          { error: "invalid_redirect_uri", message: "redirect_uri must be a https://*.chromiumapp.org URL" },
+          400,
+          origin,
+        );
+      }
+      try {
+        const xTokens = await exchangeXAuthorizationCode(clientId, clientSecret, {
+          code: body.code,
+          codeVerifier: body.code_verifier,
+          redirectUri: body.redirect_uri,
+        });
+        const me = await fetchXMe(xTokens.access_token);
+        const followingIds = await fetchXFollowingUserIds(xTokens.access_token, me.id);
+        await putProfile(env.JAMFUL_KV, me.id, {
+          name: me.name,
+          avatar_url: me.profile_image_url ?? "",
+        });
+        await setFollowingGraph(env.JAMFUL_KV, me.id, followingIds);
+        const payload: JWTPayload = {
+          sub: me.id,
+          name: me.name,
+          av: me.profile_image_url ?? "",
+        };
+        const access_token = await signAccessToken(payload, env.JWT_SECRET, 60 * 60 * 24 * 30);
+        return json(
+          {
+            access_token,
+            token_type: "Bearer",
+            user_id: me.id,
+            x_username: me.username,
+          },
+          200,
+          origin,
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return json({ error: "x_auth_failed", message }, 400, origin);
+      }
     }
 
     if (path === "/games" && request.method === "GET") {

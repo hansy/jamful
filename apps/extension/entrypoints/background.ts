@@ -1,3 +1,4 @@
+import { browser } from "wxt/browser";
 import { JamfulApiClient } from "@jamful/extension-api";
 import {
   HEARTBEAT_INTERVAL_MS,
@@ -14,7 +15,6 @@ const HEARTBEAT_ALARM = "jamful-heartbeat";
 const NOTIFY_ALARM = "jamful-notify";
 const GAMES_ALARM = "jamful-games";
 
-/** 1×1 PNG — `iconUrl` is required for `basic` notifications on some platforms; replace with a real asset later. */
 const NOTIFICATION_ICON_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -31,7 +31,7 @@ function notifyPeriodMinutes(): number {
 }
 
 async function getClient(): Promise<JamfulApiClient | null> {
-  const { apiBaseUrl, accessToken } = await chrome.storage.local.get([
+  const { apiBaseUrl, accessToken } = await browser.storage.local.get([
     "apiBaseUrl",
     "accessToken",
   ]);
@@ -45,7 +45,7 @@ async function getClient(): Promise<JamfulApiClient | null> {
 }
 
 async function loadGamesFromCache(): Promise<void> {
-  const { gamesCache } = await chrome.storage.local.get(["gamesCache"]);
+  const { gamesCache } = await browser.storage.local.get(["gamesCache"]);
   if (Array.isArray(gamesCache)) cachedGames = gamesCache as Game[];
 }
 
@@ -57,36 +57,36 @@ async function refreshGames(): Promise<void> {
   }
   try {
     cachedGames = await client.getGames();
-    await chrome.storage.local.set({ gamesCache: cachedGames });
+    await browser.storage.local.set({ gamesCache: cachedGames });
   } catch {
     await loadGamesFromCache();
   }
 }
 
 async function getActiveTab(): Promise<{ url: string | null; active: boolean }> {
-  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true });
   const t = tabs[0];
   if (!t?.url) return { url: null, active: false };
   return { url: t.url, active: true };
 }
 
 function clearDwellAlarm(): void {
-  void chrome.alarms.clear(DWELL_ALARM);
+  void browser.alarms.clear(DWELL_ALARM);
 }
 
 function scheduleDwellAlarm(): void {
-  void chrome.alarms.create(DWELL_ALARM, { delayInMinutes: dwellDelayMinutes() });
+  void browser.alarms.create(DWELL_ALARM, { delayInMinutes: dwellDelayMinutes() });
 }
 
 function startHeartbeatAlarm(): void {
-  void chrome.alarms.create(HEARTBEAT_ALARM, {
+  void browser.alarms.create(HEARTBEAT_ALARM, {
     delayInMinutes: heartbeatPeriodMinutes(),
     periodInMinutes: heartbeatPeriodMinutes(),
   });
 }
 
 function stopHeartbeatAlarm(): void {
-  void chrome.alarms.clear(HEARTBEAT_ALARM);
+  void browser.alarms.clear(HEARTBEAT_ALARM);
 }
 
 async function sendHeartbeat(gameId: string): Promise<void> {
@@ -130,7 +130,7 @@ async function scan(): Promise<void> {
 async function pollNotifications(): Promise<void> {
   const client = await getClient();
   if (!client) return;
-  const { lastNotificationCursor } = await chrome.storage.local.get(["lastNotificationCursor"]);
+  const { lastNotificationCursor } = await browser.storage.local.get(["lastNotificationCursor"]);
   const cursor =
     typeof lastNotificationCursor === "string" && lastNotificationCursor.length > 0
       ? lastNotificationCursor
@@ -138,7 +138,7 @@ async function pollNotifications(): Promise<void> {
   try {
     const res = await client.getNotifications(cursor);
     for (const n of res.items) {
-      await chrome.notifications.create(`jamful-${n.id}`, {
+      await browser.notifications.create(`jamful-${n.id}`, {
         type: "basic",
         iconUrl: NOTIFICATION_ICON_URL,
         title: "Jamful",
@@ -147,11 +147,11 @@ async function pollNotifications(): Promise<void> {
       });
     }
     if (res.next_cursor) {
-      await chrome.storage.local.set({ lastNotificationCursor: res.next_cursor });
+      await browser.storage.local.set({ lastNotificationCursor: res.next_cursor });
     }
     if (res.items.length > 0) {
-      await chrome.action.setBadgeBackgroundColor({ color: "#333" });
-      await chrome.action.setBadgeText({ text: String(res.items.length) });
+      await browser.action.setBadgeBackgroundColor({ color: "#333" });
+      await browser.action.setBadgeText({ text: String(res.items.length) });
     }
   } catch {
     /* ignore */
@@ -159,48 +159,49 @@ async function pollNotifications(): Promise<void> {
 }
 
 function ensureRepeatingAlarms(): void {
-  void chrome.alarms.create(NOTIFY_ALARM, {
+  void browser.alarms.create(NOTIFY_ALARM, {
     delayInMinutes: notifyPeriodMinutes(),
     periodInMinutes: notifyPeriodMinutes(),
   });
-  void chrome.alarms.create(GAMES_ALARM, {
+  void browser.alarms.create(GAMES_ALARM, {
     delayInMinutes: 5,
     periodInMinutes: 30,
   });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+export default defineBackground(() => {
+  browser.runtime.onInstalled.addListener(() => {
+    ensureRepeatingAlarms();
+    void refreshGames();
+  });
+
+  browser.runtime.onStartup.addListener(() => {
+    ensureRepeatingAlarms();
+    void refreshGames();
+  });
+
   ensureRepeatingAlarms();
+
+  browser.tabs.onActivated.addListener(() => {
+    void scan();
+  });
+  browser.tabs.onUpdated.addListener((_id, info) => {
+    if (info.status === "loading" || info.url) void scan();
+  });
+  browser.windows.onFocusChanged.addListener(() => {
+    void scan();
+  });
+
+  browser.alarms.onAlarm.addListener((a) => {
+    if (a.name === DWELL_ALARM) void scan();
+    if (a.name === HEARTBEAT_ALARM) {
+      const s = machine.getState();
+      if (s.kind === "playing") void sendHeartbeat(s.game.id);
+    }
+    if (a.name === NOTIFY_ALARM) void pollNotifications();
+    if (a.name === GAMES_ALARM) void refreshGames();
+  });
+
   void refreshGames();
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  ensureRepeatingAlarms();
-  void refreshGames();
-});
-
-ensureRepeatingAlarms();
-
-chrome.tabs.onActivated.addListener(() => {
   void scan();
 });
-chrome.tabs.onUpdated.addListener((_id, info) => {
-  if (info.status === "loading" || info.url) void scan();
-});
-chrome.windows.onFocusChanged.addListener(() => {
-  void scan();
-});
-
-chrome.alarms.onAlarm.addListener((a) => {
-  if (a.name === DWELL_ALARM) void scan();
-  if (a.name === HEARTBEAT_ALARM) {
-    const s = machine.getState();
-    if (s.kind === "playing") void sendHeartbeat(s.game.id);
-  }
-  if (a.name === NOTIFY_ALARM) void pollNotifications();
-  if (a.name === GAMES_ALARM) void refreshGames();
-});
-
-void refreshGames();
-void scan();
-
