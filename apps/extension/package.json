@@ -12,9 +12,10 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "prepare:wxt": "wxt prepare"
   },
   "dependencies": {
+    "@jamful/extension-api": "workspace:*",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -24,6 +25,7 @@
     "@vitejs/plugin-react": "4.7.0",
     "@wxt-dev/module-react": "^1.1.5",
     "typescript": "^5.9.3",
+    "vite": "^6.3.4",
     "wxt": "^0.20.22"
   }
 }

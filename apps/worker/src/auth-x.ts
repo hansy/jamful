@@ -5,15 +5,26 @@
 
 export const X_AUTHORIZE_URL = "https://x.com/i/oauth2/authorize";
 export const X_TOKEN_URL = "https://api.x.com/2/oauth2/token";
-export const X_API_BASE = "https://api.x.com/2";
+/** X API v2 base (OAuth and REST use `api.x.com`). */
+export const X_API_BASES = ["https://api.x.com/2"] as const;
 
 /**
- * Minimum scopes only (see X “Scopes” table in the doc above):
- * - `users.read` — `/users/me` with username + `profile_image_url`
- * - `follows.read` — who the user follows (following ids for the social graph)
- * - `offline.access` — refresh token for long-lived sessions
+ * OAuth 2.0 scope strings from X (e.g. `follows.read`, not `account.follows.*`).
+ * `GET /2/users/me` OpenAPI lists `OAuth2UserToken` with **both** `tweet.read` and `users.read`.
+ * @see https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code
+ * @see https://docs.x.com/x-api/users/user-lookup-me (operation security)
  */
-export const X_SCOPES = ["users.read", "follows.read", "offline.access"].join(" ");
+export const X_SCOPES = [
+  "tweet.read",
+  "users.read",
+  "follows.read",
+  "offline.access",
+].join(" ");
+
+const X_API_HEADERS = {
+  /** X recommends identifying the client; some 403s occur without a UA. */
+  "User-Agent": "JamfulWorker/1.0",
+} as const;
 
 export function isAllowedExtensionRedirectUri(redirectUri: string): boolean {
   try {
@@ -41,11 +52,21 @@ export function buildXAuthorizationUrl(opts: {
   return u.href;
 }
 
+/**
+ * Exchange auth code for tokens.
+ * - **Confidential client** (Web App in portal): set `clientSecret` — uses `Authorization: Basic`.
+ * - **Public client** (Native App — no secret in portal): pass empty `clientSecret` — PKCE only (required for some app types).
+ */
 export async function exchangeXAuthorizationCode(
   clientId: string,
-  clientSecret: string,
+  clientSecret: string | undefined,
   input: { code: string; codeVerifier: string; redirectUri: string },
-): Promise<{ access_token: string; refresh_token?: string }> {
+): Promise<{
+  access_token: string;
+  refresh_token?: string;
+  /** Space-separated scopes X granted (if returned). */
+  scope?: string;
+}> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: input.code,
@@ -53,27 +74,36 @@ export async function exchangeXAuthorizationCode(
     code_verifier: input.codeVerifier,
     client_id: clientId,
   });
-  const basic = btoa(`${clientId}:${clientSecret}`);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  const secret = clientSecret?.trim();
+  if (secret) {
+    headers.Authorization = `Basic ${btoa(`${clientId}:${secret}`)}`;
+  }
   const res = await fetch(X_TOKEN_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${basic}`,
-    },
+    headers,
     body,
   });
+  const text = await res.text();
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`X token exchange failed: ${res.status} ${text}`);
+    throw new Error(text || String(res.status));
   }
-  const json = (await res.json()) as {
+  const json = JSON.parse(text) as {
     access_token?: string;
     refresh_token?: string;
+    scope?: string;
+    token_type?: string;
   };
   if (!json.access_token) {
-    throw new Error("X token response missing access_token");
+    throw new Error(text);
   }
-  return { access_token: json.access_token, refresh_token: json.refresh_token };
+  return {
+    access_token: json.access_token,
+    refresh_token: json.refresh_token,
+    scope: json.scope,
+  };
 }
 
 export type XUser = {
@@ -83,48 +113,74 @@ export type XUser = {
   profile_image_url?: string;
 };
 
-export async function fetchXMe(accessToken: string): Promise<XUser> {
-  const u = new URL(`${X_API_BASE}/users/me`);
-  u.searchParams.set("user.fields", "name,username,profile_image_url");
-  const res = await fetch(u.href, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
+export async function fetchXMe(
+  accessToken: string,
+): Promise<{ user: XUser; xApiBase: string }> {
+  let lastBody = "";
+  for (const base of X_API_BASES) {
+    const uFields = new URL(`${base}/users/me`);
+    uFields.searchParams.set("user.fields", "name,username,profile_image_url");
+
+    const res = await fetch(uFields.href, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...X_API_HEADERS,
+      },
+    });
     const text = await res.text();
-    throw new Error(`X users/me failed: ${res.status} ${text}`);
+
+    if (res.ok) {
+      const json = JSON.parse(text) as {
+        data?: {
+          id: string;
+          name: string;
+          username: string;
+          profile_image_url?: string;
+        };
+      };
+      const d = json.data;
+      if (!d?.id) throw new Error(text);
+      return {
+        xApiBase: base,
+        user: {
+          id: d.id,
+          name: d.name,
+          username: d.username,
+          profile_image_url: d.profile_image_url,
+        },
+      };
+    }
+    lastBody = text;
+    if (res.status !== 403) break;
   }
-  const json = (await res.json()) as {
-    data?: { id: string; name: string; username: string; profile_image_url?: string };
-  };
-  const d = json.data;
-  if (!d?.id) throw new Error("X users/me: missing user");
-  return {
-    id: d.id,
-    name: d.name,
-    username: d.username,
-    profile_image_url: d.profile_image_url,
-  };
+  throw new Error(lastBody || "unknown");
 }
 
 /** Returns X user ids the user follows (best-effort pagination). */
 export async function fetchXFollowingUserIds(
   accessToken: string,
   xUserId: string,
+  xApiBase: string,
   maxPages = 5,
 ): Promise<string[]> {
   const ids: string[] = [];
   let token: string | undefined;
   for (let page = 0; page < maxPages; page++) {
-    const u = new URL(`${X_API_BASE}/users/${encodeURIComponent(xUserId)}/following`);
+    const u = new URL(
+      `${xApiBase}/users/${encodeURIComponent(xUserId)}/following`,
+    );
     u.searchParams.set("max_results", "1000");
     u.searchParams.set("user.fields", "id");
     if (token) u.searchParams.set("pagination_token", token);
     const res = await fetch(u.href, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...X_API_HEADERS,
+      },
     });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`X following failed: ${res.status} ${text}`);
+      throw new Error(text || String(res.status));
     }
     const json = (await res.json()) as {
       data?: Array<{ id: string }>;

@@ -94,9 +94,9 @@ export default {
     if (path === "/auth/x/token" && request.method === "POST") {
       const clientId = env.X_CLIENT_ID;
       const clientSecret = env.X_CLIENT_SECRET;
-      if (!clientId || !clientSecret) {
+      if (!clientId) {
         return json(
-          { error: "misconfigured", message: "X_CLIENT_ID and X_CLIENT_SECRET must be set" },
+          { error: "misconfigured", message: "X_CLIENT_ID must be set" },
           503,
           origin,
         );
@@ -121,13 +121,17 @@ export default {
         );
       }
       try {
-        const xTokens = await exchangeXAuthorizationCode(clientId, clientSecret, {
+        const xTokens = await exchangeXAuthorizationCode(clientId, clientSecret?.trim() || undefined, {
           code: body.code,
           codeVerifier: body.code_verifier,
           redirectUri: body.redirect_uri,
         });
-        const me = await fetchXMe(xTokens.access_token);
-        const followingIds = await fetchXFollowingUserIds(xTokens.access_token, me.id);
+        const { user: me, xApiBase } = await fetchXMe(xTokens.access_token);
+        const followingIds = await fetchXFollowingUserIds(
+          xTokens.access_token,
+          me.id,
+          xApiBase,
+        );
         await putProfile(env.JAMFUL_KV, me.id, {
           name: me.name,
           avatar_url: me.profile_image_url ?? "",

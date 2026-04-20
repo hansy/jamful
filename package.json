@@ -3,6 +3,9 @@
   "private": true,
   "packageManager": "bun@1.3.4",
   "workspaces": ["apps/*", "packages/*"],
+  "overrides": {
+    "@vitejs/plugin-react": "4.7.0"
+  },
   "scripts": {
     "build": "bun run build:worker && bun run build:extension",
     "build:worker": "bun run --cwd apps/worker deploy -- --dry-run --env-file .env.local",

@@ -1,69 +1,188 @@
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
+  line-height: 1.45;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color: #0f1419;
+  background: #fff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
-  min-height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+code {
+  font-size: 0.85em;
+  background: #f4f4f5;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
+.jamful-popup {
+  padding: 16px;
+  width: 340px;
+  box-sizing: border-box;
+}
+
+.jamful-popup__title {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.jamful-popup__muted {
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  color: #536471;
+}
+
+.jamful-popup__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jamful-popup__label {
+  display: block;
+  font-size: 0.75rem;
   font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  color: #536471;
 }
 
-@media (prefers-color-scheme: light) {
+.jamful-popup__input {
+  margin-top: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 0.875rem;
+  border: 1px solid #cfd9de;
+  border-radius: 8px;
+}
+
+.jamful-popup__input:focus {
+  outline: none;
+  border-color: #1d9bf0;
+  box-shadow: 0 0 0 2px rgba(29, 155, 240, 0.25);
+}
+
+.jamful-popup__hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #536471;
+  line-height: 1.4;
+}
+
+.jamful-popup__hint a {
+  color: #1d9bf0;
+  text-decoration: none;
+}
+
+.jamful-popup__hint a:hover {
+  text-decoration: underline;
+}
+
+.jamful-popup__redirect {
+  margin: 0;
+  font-size: 0.6875rem;
+  word-break: break-all;
+  color: #657786;
+}
+
+.jamful-popup__button {
+  border-radius: 9999px;
+  border: 1px solid #cfd9de;
+  padding: 10px 16px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-family: inherit;
+  background: #fff;
+  color: #0f1419;
+  cursor: pointer;
+}
+
+.jamful-popup__button:hover:not(:disabled) {
+  background: #f7f9f9;
+}
+
+.jamful-popup__button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.jamful-popup__button--primary {
+  background: #0f1419;
+  border-color: #0f1419;
+  color: #fff;
+}
+
+.jamful-popup__button--primary:hover:not(:disabled) {
+  background: #272c30;
+}
+
+.jamful-popup__success {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.jamful-popup__truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamful-popup__error {
+  margin: 12px 0 0;
+  font-size: 0.8125rem;
+  color: #f4212e;
+}
+
+@media (prefers-color-scheme: dark) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    color: #e7e9ea;
+    background: #000;
   }
-  a:hover {
-    color: #747bff;
+
+  .jamful-popup__input {
+    background: #16181c;
+    border-color: #536471;
+    color: inherit;
   }
-  button {
-    background-color: #f9f9f9;
+
+  code {
+    background: #2f3336;
+    color: #e7e9ea;
+  }
+
+  .jamful-popup__button {
+    background: #16181c;
+    border-color: #536471;
+    color: #e7e9ea;
+  }
+
+  .jamful-popup__button:hover:not(:disabled) {
+    background: #272c30;
+  }
+
+  .jamful-popup__button--primary {
+    background: #e7e9ea;
+    border-color: #e7e9ea;
+    color: #0f1419;
+  }
+
+  .jamful-popup__button--primary:hover:not(:disabled) {
+    background: #d7dbdc;
+  }
+
+  .jamful-popup__hint a {
+    color: #1d9bf0;
   }
 }

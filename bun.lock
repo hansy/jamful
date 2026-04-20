@@ -13,6 +13,7 @@
       "name": "wxt-react-starter",
       "version": "0.0.0",
       "dependencies": {
+        "@jamful/extension-api": "workspace:*",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
       },
@@ -22,6 +23,7 @@
         "@vitejs/plugin-react": "4.7.0",
         "@wxt-dev/module-react": "^1.1.5",
         "typescript": "^5.9.3",
+        "vite": "^6.3.4",
         "wxt": "^0.20.22",
       },
     },
@@ -56,6 +58,9 @@
       "name": "@jamful/shared",
       "version": "0.0.1",
     },
+  },
+  "overrides": {
+    "@vitejs/plugin-react": "4.7.0",
   },
   "packages": {
     "@1natsu/wait-element": ["@1natsu/wait-element@4.2.0", "", { "dependencies": { "defu": "^6.1.4", "many-keys-map": "^3.0.0" } }, "sha512-Om0Q+WE9mNrpY4AwMTvkFiYHv8VM7TML3PvOqXy+w6kAjLjKhGYHYX+305+a6J8RVpds9s7IF2Z5aOPYwULFNw=="],
