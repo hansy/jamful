@@ -1,3 +1,243 @@
+import { JamfulApiClient } from "@jamful/extension-api";
+import { matchTabUrlToGame } from "../lib/bundled-games";
+import { applyToolbarPresentation, type ToolbarGlyph } from "../lib/toolbar-icon";
+
+const HEARTBEAT_ALARM = "jamful-heartbeat";
+const FEED_ALARM = "jamful-feed";
+const DWELL_MS = 8000;
+
+let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+let dwellGeneration = 0;
+let dwellTargetKey: string | null = null;
+let playingGameId: string | null = null;
+
+/** `null` = signed out. `number` = last successful feed length (friends playing now). */
+let friendsPlayingCount: number | null = null;
+
+function normalizeUrlForDwell(href: string): string {
+  const u = new URL(href);
+  const path = (u.pathname || "/").replace(/\/+$/, "") || "/";
+  return `${u.origin}${path}`;
+}
+
+function resetDwellSession(): void {
+  if (dwellTimer != null) {
+    clearTimeout(dwellTimer);
+    dwellTimer = null;
+  }
+  dwellTargetKey = null;
+  dwellGeneration += 1;
+}
+
+async function stopPlaying(): Promise<void> {
+  playingGameId = null;
+  try {
+    await browser.alarms.clear(HEARTBEAT_ALARM);
+  } catch {
+    /* ignore */
+  }
+  await refreshToolbarPresentation();
+}
+
+async function getAuth(): Promise<{ base: string; token: string } | null> {
+  const { apiBaseUrl, accessToken } = await browser.storage.local.get([
+    "apiBaseUrl",
+    "accessToken",
+  ]);
+  const base =
+    typeof apiBaseUrl === "string" && apiBaseUrl.length > 0 ? apiBaseUrl.trim() : "";
+  const token = typeof accessToken === "string" && accessToken.length > 0 ? accessToken : "";
+  if (!base || !token) return null;
+  return { base: base.replace(/\/$/, ""), token };
+}
+
+async function isBroadcastingPresence(): Promise<boolean> {
+  if (playingGameId == null) return false;
+  const tab = await activeTab();
+  const game = tab ? matchTabUrlToGame(tab.href) : null;
+  return !!(game && game.id === playingGameId);
+}
+
+async function refreshToolbarPresentation(): Promise<void> {
+  const auth = await getAuth();
+  const authed = !!auth;
+  const broadcasting = authed && (await isBroadcastingPresence());
+  const glyph: ToolbarGlyph = broadcasting ? "live" : "gray";
+  const badgeCount = authed ? (friendsPlayingCount ?? 0) : null;
+  await applyToolbarPresentation({ glyph, badgeCount });
+}
+
+async function activeTab(): Promise<{ id: number; href: string } | null> {
+  const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+  const tab = tabs[0];
+  if (tab.id == null) return null;
+  const u = tab.url;
+  if (!u || u.startsWith("chrome://") || u.startsWith("edge://") || u.startsWith("about:")) {
+    return null;
+  }
+  if (u.startsWith(browser.runtime.getURL(""))) return null;
+  return { id: tab.id, href: u };
+}
+
+async function sendHeartbeat(auth: { base: string; token: string }, gameId: string): Promise<void> {
+  try {
+    const client = new JamfulApiClient(auth.base, () => auth.token);
+    await client.heartbeat(gameId);
+  } catch (e) {
+    console.warn("[jamful] heartbeat failed", e);
+  }
+}
+
+async function enterPlaying(gameId: string, auth: { base: string; token: string }): Promise<void> {
+  await browser.alarms.clear(HEARTBEAT_ALARM);
+  playingGameId = gameId;
+  await sendHeartbeat(auth, gameId);
+  await browser.alarms.create(HEARTBEAT_ALARM, { delayInMinutes: 1, periodInMinutes: 1 });
+  await refreshToolbarPresentation();
+}
+
+async function completeDwell(gen: number, expectedGameId: string): Promise<void> {
+  dwellTimer = null;
+  if (gen !== dwellGeneration) return;
+  dwellTargetKey = null;
+  const auth = await getAuth();
+  if (!auth) return;
+  const tab = await activeTab();
+  if (!tab) return;
+  const game = matchTabUrlToGame(tab.href);
+  if (!game || game.id !== expectedGameId) return;
+  await enterPlaying(expectedGameId, auth);
+}
+
+async function syncPresence(): Promise<void> {
+  try {
+    const auth = await getAuth();
+    if (!auth) {
+      resetDwellSession();
+      await stopPlaying();
+      return;
+    }
+
+    const tab = await activeTab();
+    if (!tab) {
+      resetDwellSession();
+      await stopPlaying();
+      return;
+    }
+
+    const game = matchTabUrlToGame(tab.href);
+    if (!game) {
+      resetDwellSession();
+      await stopPlaying();
+      return;
+    }
+
+    if (playingGameId === game.id) {
+      resetDwellSession();
+      return;
+    }
+
+    if (playingGameId != null && playingGameId !== game.id) {
+      await stopPlaying();
+    }
+
+    const nextKey = `${tab.id}|${game.id}|${normalizeUrlForDwell(tab.href)}`;
+    if (dwellTargetKey === nextKey && dwellTimer != null) {
+      return;
+    }
+
+    resetDwellSession();
+    dwellTargetKey = nextKey;
+    const gen = dwellGeneration;
+    dwellTimer = setTimeout(() => void completeDwell(gen, game.id), DWELL_MS);
+  } finally {
+    await refreshToolbarPresentation();
+  }
+}
+
+async function onHeartbeatAlarm(): Promise<void> {
+  const auth = await getAuth();
+  if (!auth || playingGameId == null) {
+    await stopPlaying();
+    return;
+  }
+  const tab = await activeTab();
+  const game = tab ? matchTabUrlToGame(tab.href) : null;
+  if (!game || game.id !== playingGameId) {
+    resetDwellSession();
+    await stopPlaying();
+    return;
+  }
+  await sendHeartbeat(auth, playingGameId);
+}
+
+async function ensureFeedAlarm(): Promise<void> {
+  const auth = await getAuth();
+  if (!auth) {
+    try {
+      await browser.alarms.clear(FEED_ALARM);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  const existing = await browser.alarms.get(FEED_ALARM);
+  if (!existing) {
+    await browser.alarms.create(FEED_ALARM, { periodInMinutes: 1, delayInMinutes: 1 });
+  }
+}
+
+async function refreshFeedCount(): Promise<void> {
+  const auth = await getAuth();
+  if (!auth) {
+    friendsPlayingCount = null;
+    try {
+      await browser.alarms.clear(FEED_ALARM);
+    } catch {
+      /* ignore */
+    }
+    await refreshToolbarPresentation();
+    return;
+  }
+  try {
+    const client = new JamfulApiClient(auth.base, () => auth.token);
+    const feed = await client.getFeed();
+    friendsPlayingCount = feed.length;
+  } catch (e) {
+    console.warn("[jamful] feed fetch failed", e);
+    if (friendsPlayingCount === null) {
+      friendsPlayingCount = 0;
+    }
+  }
+  await refreshToolbarPresentation();
+}
+
 export default defineBackground(() => {
-  console.log('Hello background!', { id: browser.runtime.id });
+  void ensureFeedAlarm();
+  void refreshFeedCount();
+  void syncPresence();
+
+  browser.tabs.onUpdated.addListener((_id, info) => {
+    if (info.status === "loading" || info.url != null) void syncPresence();
+  });
+  browser.tabs.onActivated.addListener(() => void syncPresence());
+  browser.windows.onFocusChanged.addListener((w) => {
+    if (w !== browser.windows.WINDOW_ID_NONE) void syncPresence();
+  });
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (!changes.accessToken && !changes.apiBaseUrl) return;
+    if (changes.accessToken) {
+      friendsPlayingCount =
+        typeof changes.accessToken.newValue === "string" ? 0 : null;
+    }
+    void ensureFeedAlarm();
+    void refreshFeedCount();
+    void syncPresence();
+  });
+
+  browser.alarms.onAlarm.addListener((a) => {
+    if (a.name === HEARTBEAT_ALARM) void onHeartbeatAlarm();
+    else if (a.name === FEED_ALARM) void refreshFeedCount();
+  });
 });
