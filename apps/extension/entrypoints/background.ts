@@ -23,6 +23,7 @@ import { applyToolbarPresentation, type ToolbarGlyph } from "../lib/toolbar-icon
 const HEARTBEAT_ALARM = "jamful-heartbeat";
 const FEED_ALARM = "jamful-feed";
 const DWELL_MS = 8000;
+const PRESENCE_INVISIBLE_KEY = "presenceInvisible";
 
 let dwellTimer: ReturnType<typeof setTimeout> | null = null;
 let dwellGeneration = 0;
@@ -105,6 +106,11 @@ async function hydrateSelfPresence(): Promise<void> {
   }
 }
 
+async function isPresenceInvisible(): Promise<boolean> {
+  const { presenceInvisible } = await browser.storage.local.get([PRESENCE_INVISIBLE_KEY]);
+  return presenceInvisible === true;
+}
+
 async function isBroadcastingPresence(): Promise<boolean> {
   if (!isPopupSelfPresenceFresh(selfPresence) || selfPresence.gameId == null) return false;
   const tab = await activeTab();
@@ -115,7 +121,8 @@ async function isBroadcastingPresence(): Promise<boolean> {
 async function refreshToolbarPresentation(): Promise<void> {
   const auth = await getAuth();
   const authed = !!auth;
-  const broadcasting = authed && (await isBroadcastingPresence());
+  const invisible = authed && (await isPresenceInvisible());
+  const broadcasting = authed && !invisible && (await isBroadcastingPresence());
   const glyph: ToolbarGlyph = broadcasting ? "live" : "gray";
   const badgeCount = authed ? (friendsPlayingCount ?? 0) : null;
   await applyToolbarPresentation({ glyph, badgeCount });
@@ -148,6 +155,24 @@ async function sendHeartbeat(
   }
 }
 
+async function sendStopPresence(auth: { base: string; token: string }): Promise<void> {
+  try {
+    const client = new JamfulApiClient(auth.base, () => auth.token);
+    await client.stopPresence();
+  } catch (e) {
+    console.warn("[jamful] presence stop failed", e);
+  }
+}
+
+async function enterInvisibleMode(): Promise<void> {
+  const auth = await getAuth();
+  resetDwellSession();
+  await stopPlaying();
+  if (auth) {
+    await sendStopPresence(auth);
+  }
+}
+
 async function enterPlaying(game: Game, auth: { base: string; token: string }): Promise<void> {
   await browser.alarms.clear(HEARTBEAT_ALARM);
   playingGameId = game.id;
@@ -162,6 +187,10 @@ async function completeDwell(gen: number, expectedGameId: string): Promise<void>
   dwellTargetKey = null;
   const auth = await getAuth();
   if (!auth) return;
+  if (await isPresenceInvisible()) {
+    await stopPlaying();
+    return;
+  }
   const tab = await activeTab();
   if (!tab) return;
   const game = matchTabUrlToGame(tab.href);
@@ -173,6 +202,12 @@ async function syncPresence(): Promise<void> {
   try {
     const auth = await getAuth();
     if (!auth) {
+      resetDwellSession();
+      await stopPlaying();
+      return;
+    }
+
+    if (await isPresenceInvisible()) {
       resetDwellSession();
       await stopPlaying();
       return;
@@ -217,7 +252,7 @@ async function syncPresence(): Promise<void> {
 
 async function onHeartbeatAlarm(): Promise<void> {
   const auth = await getAuth();
-  if (!auth || playingGameId == null) {
+  if (!auth || playingGameId == null || (await isPresenceInvisible())) {
     await stopPlaying();
     return;
   }
@@ -321,6 +356,10 @@ export default defineBackground(() => {
     await hydrateSelfPresence();
     await ensureFeedAlarm();
     await refreshFeedCache();
+    if (await isPresenceInvisible()) {
+      await enterInvisibleMode();
+      return;
+    }
     await syncPresence();
   })();
 
@@ -333,13 +372,17 @@ export default defineBackground(() => {
   });
   browser.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (!changes.accessToken) return;
+    if (!changes.accessToken && !changes.presenceInvisible) return;
     if (changes.accessToken) {
       friendsPlayingCount =
         typeof changes.accessToken.newValue === "string" ? 0 : null;
+      void ensureFeedAlarm();
+      void refreshFeedCache(true);
     }
-    void ensureFeedAlarm();
-    void refreshFeedCache(true);
+    if (changes.presenceInvisible?.newValue === true) {
+      void enterInvisibleMode();
+      return;
+    }
     void syncPresence();
   });
 

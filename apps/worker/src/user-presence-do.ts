@@ -31,6 +31,10 @@ export class UserPresenceDO extends DurableObject {
       return this.handleHeartbeat(userId, body.game_id);
     }
 
+    if (request.method === "POST" && url.pathname.endsWith("/stop")) {
+      return this.handleStop();
+    }
+
     return new Response("Not found", { status: 404 });
   }
 
@@ -82,5 +86,10 @@ export class UserPresenceDO extends DurableObject {
     }
 
     return Response.json({ ok: true, is_new_session: isNew });
+  }
+
+  private async handleStop(): Promise<Response> {
+    await this.ctx.storage.delete("session");
+    return Response.json({ ok: true });
   }
 }

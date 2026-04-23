@@ -189,6 +189,25 @@ export default {
       });
     }
 
+    if (path === "/presence/stop" && request.method === "POST") {
+      const user = await authUser(request, env);
+      if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
+      const stub = env.USER_PRESENCE.get(env.USER_PRESENCE.idFromName(user.sub));
+      const res = await stub.fetch(
+        new Request("https://do/stop", {
+          method: "POST",
+          headers: {
+            "X-User-Id": user.sub,
+          },
+        }),
+      );
+      const text = await res.text();
+      return new Response(text, {
+        status: res.status,
+        headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+      });
+    }
+
     if (path === "/feed" && request.method === "GET") {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);

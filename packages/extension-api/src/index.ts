@@ -51,6 +51,12 @@ export class JamfulApiClient {
     });
   }
 
+  async stopPresence(): Promise<{ ok: boolean }> {
+    return this.request("/presence/stop", {
+      method: "POST",
+    });
+  }
+
   async getFeed(): Promise<FeedEntry[]> {
     return this.request<FeedEntry[]>("/feed");
   }

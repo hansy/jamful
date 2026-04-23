@@ -79,24 +79,31 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
   );
 }
 
-function PresenceSummary({ selfPresence }: { selfPresence: PopupSelfPresence }) {
-  const playingNow = isPopupSelfPresenceFresh(selfPresence);
+function PresenceSummary({
+  selfPresence,
+  presenceInvisible,
+}: {
+  selfPresence: PopupSelfPresence;
+  presenceInvisible: boolean;
+}) {
+  const playingNow = !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
+  const badgeClassName = playingNow
+    ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--active"
+    : presenceInvisible
+      ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--invisible"
+      : "jamful-popup__presenceBadge";
 
   return (
     <div className="jamful-popup__presence">
-      <span
-        className={
-          playingNow
-            ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--active"
-            : "jamful-popup__presenceBadge"
-        }
-      >
-        {playingNow ? "Playing now" : "Not playing right now"}
+      <span className={badgeClassName}>
+        {presenceInvisible ? "Invisible mode" : playingNow ? "Playing now" : "Not playing right now"}
       </span>
       <p className="jamful-popup__presenceCopy">
-        {playingNow && selfPresence.gameName
-          ? `You're currently in ${selfPresence.gameName}.`
-          : "Open a supported game tab and Jamful will share your presence after a short moment."}
+        {presenceInvisible
+          ? "Your game activity is hidden until you turn visibility back on."
+          : playingNow && selfPresence.gameName
+            ? `You're currently in ${selfPresence.gameName}.`
+            : "Open a supported game tab and Jamful will share your presence after a short moment."}
       </p>
     </div>
   );
@@ -105,6 +112,7 @@ function PresenceSummary({ selfPresence }: { selfPresence: PopupSelfPresence }) 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [xUsername, setXUsername] = useState<string | null>(null);
+  const [presenceInvisible, setPresenceInvisible] = useState(false);
   const [selfPresence, setSelfPresence] = useState<PopupSelfPresence>(
     inactivePopupSelfPresence(),
   );
@@ -112,6 +120,7 @@ export default function App() {
   const [feedLoading, setFeedLoading] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
 
   const apiBase = getConfiguredApiBaseOrNull();
@@ -125,12 +134,14 @@ export default function App() {
       const stored = await browser.storage.local.get([
         "accessToken",
         "xUsername",
+        "presenceInvisible",
         POPUP_FEED_CACHE_STORAGE_KEY,
         POPUP_SELF_PRESENCE_STORAGE_KEY,
       ]);
       if (cancelled) return;
       setToken(typeof stored.accessToken === "string" ? stored.accessToken : null);
       setXUsername(typeof stored.xUsername === "string" ? stored.xUsername : null);
+      setPresenceInvisible(stored.presenceInvisible === true);
       const feedCache = coercePopupFeedCache(stored[POPUP_FEED_CACHE_STORAGE_KEY]);
       setFeed(feedCache.entries);
       setFeedError(feedCache.error);
@@ -157,6 +168,9 @@ export default function App() {
             ? changes.xUsername.newValue
             : null,
         );
+      }
+      if (changes.presenceInvisible) {
+        setPresenceInvisible(changes.presenceInvisible.newValue === true);
       }
       if (changes[POPUP_FEED_CACHE_STORAGE_KEY]) {
         const feedCache = coercePopupFeedCache(
@@ -298,6 +312,7 @@ export default function App() {
     setToken(null);
     setXUsername(null);
     setAuthError(null);
+    setVisibilityError(null);
     setFeed([]);
     setFeedError(null);
     setFeedLoading(false);
@@ -307,13 +322,52 @@ export default function App() {
     setSelfPresence(inactivePopupSelfPresence());
   }
 
+  async function handlePresenceInvisibleChange(next: boolean): Promise<void> {
+    setPresenceInvisible(next);
+    setVisibilityError(null);
+    try {
+      await browser.storage.local.set({ presenceInvisible: next });
+    } catch (error) {
+      setPresenceInvisible(!next);
+      setVisibilityError(errorMessage(error));
+    }
+  }
+
   return (
     <main className="jamful-popup">
       <header className="jamful-popup__masthead">
         <p className="jamful-popup__eyebrow">Jamful</p>
-        <h1 className="jamful-popup__title">
-          {loggedIn ? "Friends playing now" : "See who's playing"}
-        </h1>
+        <div className="jamful-popup__header">
+          <h1 className="jamful-popup__title">
+            {loggedIn ? "Friends playing now" : "See who's playing"}
+          </h1>
+          {loggedIn && (
+            <label className="jamful-popup__visibilityToggle">
+              <input
+                className="jamful-popup__visibilityInput"
+                type="checkbox"
+                checked={presenceInvisible}
+                onChange={(event) =>
+                  void handlePresenceInvisibleChange(event.currentTarget.checked)
+                }
+                aria-label="Go invisible"
+              />
+              <span className="jamful-popup__visibilityTrack" aria-hidden="true">
+                <span className="jamful-popup__visibilityKnob" />
+              </span>
+              <span className="jamful-popup__visibilityText">
+                {presenceInvisible ? "Invisible" : "Visible"}
+              </span>
+            </label>
+          )}
+        </div>
+        {loggedIn && (
+          <p className="jamful-popup__muted">
+            {presenceInvisible
+              ? "Invisible: your game activity is not shared."
+              : "Visible: game activity can be shared with friends."}
+          </p>
+        )}
       </header>
 
       {!loggedIn ? (
@@ -351,7 +405,11 @@ export default function App() {
                 Sign out
               </button>
             </div>
-            <PresenceSummary selfPresence={selfPresence} />
+            <PresenceSummary
+              selfPresence={selfPresence}
+              presenceInvisible={presenceInvisible}
+            />
+            {visibilityError && <p className="jamful-popup__error">{visibilityError}</p>}
           </section>
 
           <section className="jamful-popup__feed" aria-label="Friends playing now">

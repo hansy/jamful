@@ -60,6 +60,14 @@ button {
   text-transform: uppercase;
 }
 
+.jamful-popup__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+}
+
 .jamful-popup__title {
   margin: 3px 0 0;
   max-width: 280px;
@@ -67,6 +75,78 @@ button {
   font-weight: 850;
   letter-spacing: -0.04em;
   line-height: 1.02;
+}
+
+.jamful-popup__header > .jamful-popup__title {
+  flex: 1;
+  max-width: none;
+}
+
+.jamful-popup__visibilityToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  color: var(--jamful-muted);
+  font-size: 0.71875rem;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.jamful-popup__visibilityInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.jamful-popup__visibilityTrack {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--jamful-accent-strong);
+  box-shadow: inset 0 0 0 1px rgba(15, 98, 69, 0.18);
+}
+
+.jamful-popup__visibilityKnob {
+  position: absolute;
+  top: 3px;
+  left: 19px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--jamful-panel-strong);
+  box-shadow: 0 1px 2px rgba(22, 34, 28, 0.25);
+  transition: transform 140ms ease;
+}
+
+.jamful-popup__visibilityInput:checked + .jamful-popup__visibilityTrack {
+  background: var(--jamful-line);
+  box-shadow: inset 0 0 0 1px rgba(22, 34, 28, 0.08);
+}
+
+.jamful-popup__visibilityInput:checked
+  + .jamful-popup__visibilityTrack
+  .jamful-popup__visibilityKnob {
+  transform: translateX(-16px);
+}
+
+.jamful-popup__visibilityInput:focus-visible + .jamful-popup__visibilityTrack {
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 98, 69, 0.18),
+    0 0 0 2px rgba(22, 134, 93, 0.2);
+}
+
+.jamful-popup__visibilityText {
+  min-width: 52px;
+  text-align: left;
 }
 
 .jamful-popup__auth,
@@ -89,6 +169,12 @@ button {
   margin: 0;
   color: var(--jamful-muted);
   font-size: 0.875rem;
+}
+
+.jamful-popup__masthead .jamful-popup__muted {
+  margin-top: 10px;
+  max-width: 304px;
+  font-size: 0.8125rem;
 }
 
 .jamful-popup__button {
@@ -310,11 +396,13 @@ button {
 
 @media (prefers-reduced-motion: no-preference) {
   .jamful-popup__button,
-  .jamful-popup__openGame {
+  .jamful-popup__openGame,
+  .jamful-popup__visibilityTrack {
     transition:
       border-color 140ms ease,
       transform 140ms ease,
-      background 140ms ease;
+      background 140ms ease,
+      box-shadow 140ms ease;
   }
 
   .jamful-popup__account,
@@ -357,6 +445,20 @@ button {
     background:
       radial-gradient(circle at top left, rgba(124, 226, 176, 0.14), transparent 34%),
       linear-gradient(145deg, #101811 0%, #0b100e 100%);
+  }
+
+  .jamful-popup__visibilityTrack {
+    box-shadow: inset 0 0 0 1px rgba(124, 226, 176, 0.18);
+  }
+
+  .jamful-popup__visibilityInput:checked + .jamful-popup__visibilityTrack {
+    box-shadow: inset 0 0 0 1px rgba(239, 248, 238, 0.08);
+  }
+
+  .jamful-popup__visibilityInput:focus-visible + .jamful-popup__visibilityTrack {
+    box-shadow:
+      inset 0 0 0 1px rgba(124, 226, 176, 0.18),
+      0 0 0 2px rgba(124, 226, 176, 0.14);
   }
 
   .jamful-popup__button--primary {
