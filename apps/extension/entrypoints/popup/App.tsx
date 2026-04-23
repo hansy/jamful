@@ -42,35 +42,25 @@ function FriendAvatar({ name, avatarUrl }: { name: string; avatarUrl: string }) 
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = avatarUrl.length > 0 && !imageFailed;
 
-  return (
-    <span className="jamful-popup__avatar" aria-hidden="true">
-      {showImage ? (
-        <img
-          className="jamful-popup__avatarImage"
-          src={avatarUrl}
-          alt=""
-          onError={() => setImageFailed(true)}
-        />
-      ) : (
-        <span className="jamful-popup__avatarFallback">{initialsForName(name)}</span>
-      )}
-    </span>
-  );
+  if (showImage) {
+    return <img src={avatarUrl} alt="" onError={() => setImageFailed(true)} />;
+  }
+
+  return <span aria-hidden="true">{initialsForName(name)}</span>;
 }
 
 function FriendRow({ entry }: { entry: FeedEntry }) {
   const gameName = entry.game.name || "Unknown game";
 
   return (
-    <li className="jamful-popup__friend">
+    <li>
       <FriendAvatar name={entry.friend.name} avatarUrl={entry.friend.avatar_url} />
-      <div className="jamful-popup__friendCopy">
-        <p className="jamful-popup__friendName">{entry.friend.name}</p>
-        <p className="jamful-popup__friendMeta">Playing {gameName}</p>
+      <div>
+        <p>{entry.friend.name}</p>
+        <p>Playing {gameName}</p>
       </div>
       <button
         type="button"
-        className="jamful-popup__openGame"
         onClick={() => void browser.tabs.create({ url: entry.game.url, active: true })}
       >
         Open
@@ -87,25 +77,23 @@ function PresenceSummary({
   presenceInvisible: boolean;
 }) {
   const playingNow = !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
-  const badgeClassName = playingNow
-    ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--active"
-    : presenceInvisible
-      ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--invisible"
-      : "jamful-popup__presenceBadge";
+  const status = presenceInvisible
+    ? "Invisible mode"
+    : playingNow
+      ? "Playing now"
+      : "Not playing right now";
 
   return (
-    <div className="jamful-popup__presence">
-      <span className={badgeClassName}>
-        {presenceInvisible ? "Invisible mode" : playingNow ? "Playing now" : "Not playing right now"}
-      </span>
-      <p className="jamful-popup__presenceCopy">
+    <section>
+      <p>{status}</p>
+      <p>
         {presenceInvisible
           ? "Your game activity is hidden until you turn visibility back on."
           : playingNow && selfPresence.gameName
             ? `You're currently in ${selfPresence.gameName}.`
             : "Open a supported game tab and Jamful will share your presence after a short moment."}
       </p>
-    </div>
+    </section>
   );
 }
 
@@ -334,35 +322,26 @@ export default function App() {
   }
 
   return (
-    <main className="jamful-popup">
-      <header className="jamful-popup__masthead">
-        <p className="jamful-popup__eyebrow">Jamful</p>
-        <div className="jamful-popup__header">
-          <h1 className="jamful-popup__title">
-            {loggedIn ? "Friends playing now" : "See who's playing"}
-          </h1>
+    <main>
+      <header>
+        <p>Jamful</p>
+        <div>
+          <h1>{loggedIn ? "Friends playing now" : "See who's playing"}</h1>
           {loggedIn && (
-            <label className="jamful-popup__visibilityToggle">
+            <label>
               <input
-                className="jamful-popup__visibilityInput"
                 type="checkbox"
                 checked={presenceInvisible}
                 onChange={(event) =>
                   void handlePresenceInvisibleChange(event.currentTarget.checked)
                 }
-                aria-label="Go invisible"
               />
-              <span className="jamful-popup__visibilityTrack" aria-hidden="true">
-                <span className="jamful-popup__visibilityKnob" />
-              </span>
-              <span className="jamful-popup__visibilityText">
-                {presenceInvisible ? "Invisible" : "Visible"}
-              </span>
+              {presenceInvisible ? " Invisible" : " Visible"}
             </label>
           )}
         </div>
         {loggedIn && (
-          <p className="jamful-popup__muted">
+          <p>
             {presenceInvisible
               ? "Invisible: your game activity is not shared."
               : "Visible: game activity can be shared with friends."}
@@ -371,35 +350,33 @@ export default function App() {
       </header>
 
       {!loggedIn ? (
-        <section className="jamful-popup__auth">
-          <p className="jamful-popup__muted">
+        <section>
+          <p>
             Sign in with X to see friends who are active in supported web games.
           </p>
           <button
             type="button"
-            className="jamful-popup__button jamful-popup__button--primary"
             onClick={() => void handleSignIn()}
             disabled={loginBusy || !apiBase}
           >
             {loginBusy ? "Signing in..." : "Sign in with X"}
           </button>
           {(authError || configError) && (
-            <p className="jamful-popup__error">{authError ?? configError}</p>
+            <p>{authError ?? configError}</p>
           )}
         </section>
       ) : (
         <>
-          <section className="jamful-popup__account" aria-label="Account status">
-            <div className="jamful-popup__accountTop">
+          <section aria-label="Account status">
+            <div>
               <div>
-                <p className="jamful-popup__label">Authentication</p>
-                <p className="jamful-popup__signedIn">
+                <p>Authentication</p>
+                <p>
                   Signed in{xUsername ? ` as @${xUsername}` : ""}
                 </p>
               </div>
               <button
                 type="button"
-                className="jamful-popup__button jamful-popup__button--quiet"
                 onClick={() => void handleSignOut()}
               >
                 Sign out
@@ -409,19 +386,17 @@ export default function App() {
               selfPresence={selfPresence}
               presenceInvisible={presenceInvisible}
             />
-            {visibilityError && <p className="jamful-popup__error">{visibilityError}</p>}
+            {visibilityError && <p>{visibilityError}</p>}
           </section>
 
-          <section className="jamful-popup__feed" aria-label="Friends playing now">
-            <div className="jamful-popup__feedHeader">
-              <p className="jamful-popup__label">Friends</p>
-              <span className="jamful-popup__count">
-                {feed.length === 1 ? "1 active" : `${feed.length} active`}
-              </span>
+          <section aria-label="Friends playing now">
+            <div>
+              <p>Friends</p>
+              <p>{feed.length === 1 ? "1 active" : `${feed.length} active`}</p>
             </div>
 
             {feed.length > 0 ? (
-              <ul className="jamful-popup__friendList">
+              <ul>
                 {feed.map((entry) => (
                   <FriendRow
                     key={`${entry.session_id}:${entry.friend.name}:${entry.game.url}`}
@@ -430,13 +405,13 @@ export default function App() {
                 ))}
               </ul>
             ) : (
-              <div className="jamful-popup__empty">
+              <div>
                 <p>{feedLoading ? "Loading friends..." : "No friends are playing right now."}</p>
-                <span>Open the popup later or start a game so friends can jump in.</span>
+                <p>Open the popup later or start a game so friends can jump in.</p>
               </div>
             )}
 
-            {feedError && <p className="jamful-popup__error">{feedError}</p>}
+            {feedError && <p>{feedError}</p>}
           </section>
         </>
       )}
