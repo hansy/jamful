@@ -18,11 +18,11 @@ import {
   isPopupSelfPresenceFresh,
   type PopupSelfPresence,
 } from "../lib/self-presence";
-import { applyToolbarPresentation, type ToolbarGlyph } from "../lib/toolbar-icon";
+import { applyToolbarPresentation } from "../lib/toolbar-icon";
 
 const HEARTBEAT_ALARM = "jamful-heartbeat";
 const FEED_ALARM = "jamful-feed";
-const DWELL_MS = 8000;
+const DWELL_MS = 0;
 const PRESENCE_INVISIBLE_KEY = "presenceInvisible";
 
 let dwellTimer: ReturnType<typeof setTimeout> | null = null;
@@ -123,9 +123,8 @@ async function refreshToolbarPresentation(): Promise<void> {
   const authed = !!auth;
   const invisible = authed && (await isPresenceInvisible());
   const broadcasting = authed && !invisible && (await isBroadcastingPresence());
-  const glyph: ToolbarGlyph = broadcasting ? "live" : "gray";
-  const badgeCount = authed ? (friendsPlayingCount ?? 0) : null;
-  await applyToolbarPresentation({ glyph, badgeCount });
+  const onlineCount = authed ? (friendsPlayingCount ?? 0) : null;
+  await applyToolbarPresentation({ onlineCount, broadcasting });
 }
 
 async function activeTab(): Promise<{ id: number; href: string } | null> {
@@ -234,6 +233,12 @@ async function syncPresence(): Promise<void> {
 
     if (playingGameId != null && playingGameId !== game.id) {
       await stopPlaying();
+    }
+
+    if (DWELL_MS <= 0) {
+      resetDwellSession();
+      await enterPlaying(game, auth);
+      return;
     }
 
     const nextKey = `${tab.id}|${game.id}|${normalizeUrlForDwell(tab.href)}`;

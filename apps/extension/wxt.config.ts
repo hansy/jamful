@@ -66,6 +66,21 @@ export default defineConfig({
     return {
       name: "Jamful",
       description: "See when friends are playing web games.",
+      action: {
+        default_icon: {
+          "16": "icon/16.png",
+          "24": "icon/24.png",
+          "32": "icon/32.png",
+        },
+      },
+      icons: {
+        "16": "icon/16.png",
+        "24": "icon/24.png",
+        "32": "icon/32.png",
+        "48": "icon/48.png",
+        "96": "icon/96.png",
+        "128": "icon/128.png",
+      },
       permissions: ["storage", "identity", "tabs", "alarms"],
       host_permissions: [...new Set([apiHostPermissionPattern(apiBase), ...allowlistHosts])],
     };
