@@ -1,23 +1,29 @@
-import type { FeedEntry } from "@jamful/shared";
+import type {
+  FeedEntry,
+  GraphStatusResponse,
+} from "@jamful/shared";
 import {
   buildXAuthorizationUrl,
   exchangeXAuthorizationCode,
-  fetchXFollowingUserIds,
   fetchXMe,
   isAllowedExtensionRedirectUri,
 } from "./auth-x";
 import { signAccessToken, verifyAccessToken } from "./auth-jwt";
+import { encryptSecret } from "./crypto";
+import { getActiveFeedRows } from "./feed";
 import { gameById, getRegistryGames } from "./games";
-import {
-  getFollowing,
-  getProfile,
-  getFollowers,
-  putProfile,
-  setFollowingGraph,
-} from "./social";
-import type { JWTPayload, PresenceQueueMessage } from "./types";
+import { handleGraphSyncMessage } from "./graph-sync";
+import { listNotifications } from "./notifications";
+import { handlePresenceQueueMessage } from "./presence-events";
+import type { GraphSyncQueueMessage, JWTPayload, PresenceQueueMessage } from "./types";
 import { UserInboxDO } from "./user-inbox-do";
 import { UserPresenceDO } from "./user-presence-do";
+import {
+  getGraphStatus,
+  queueGraphSyncRun,
+  upsertOAuthCredential,
+  upsertUserFromX,
+} from "./users";
 
 export { UserInboxDO, UserPresenceDO };
 
@@ -46,6 +52,14 @@ async function authUser(request: Request, env: Env): Promise<JWTPayload | null> 
   const token = h.slice(7);
   if (!env.JWT_SECRET) return null;
   return verifyAccessToken(token, env.JWT_SECRET);
+}
+
+function graphSummary(status: GraphStatusResponse) {
+  return {
+    status: status.status,
+    last_synced_at: status.last_synced_at,
+    error_message: status.error_message,
+  };
 }
 
 export default {
@@ -92,11 +106,21 @@ export default {
     }
 
     if (path === "/auth/x/token" && request.method === "POST") {
-      const clientId = env.X_CLIENT_ID;
-      const clientSecret = env.X_CLIENT_SECRET;
+      const clientId = env.X_CLIENT_ID?.trim();
+      const clientSecret = env.X_CLIENT_SECRET?.trim() || undefined;
       if (!clientId) {
         return json(
           { error: "misconfigured", message: "X_CLIENT_ID must be set" },
+          503,
+          origin,
+        );
+      }
+      if (!env.JWT_SECRET) {
+        return json({ error: "misconfigured", message: "JWT_SECRET must be set" }, 503, origin);
+      }
+      if (!env.X_REFRESH_TOKEN_ENC_KEY?.trim()) {
+        return json(
+          { error: "misconfigured", message: "X_REFRESH_TOKEN_ENC_KEY must be set" },
           503,
           origin,
         );
@@ -120,35 +144,58 @@ export default {
           origin,
         );
       }
+
       try {
-        const xTokens = await exchangeXAuthorizationCode(clientId, clientSecret?.trim() || undefined, {
+        const xTokens = await exchangeXAuthorizationCode(clientId, clientSecret, {
           code: body.code,
           codeVerifier: body.code_verifier,
           redirectUri: body.redirect_uri,
         });
-        const { user: me, xApiBase } = await fetchXMe(xTokens.access_token);
-        const followingIds = await fetchXFollowingUserIds(
-          xTokens.access_token,
+        if (!xTokens.refresh_token) {
+          return json(
+            {
+              error: "missing_refresh_token",
+              message: "X did not return a refresh token. Ensure offline.access is enabled.",
+            },
+            503,
+            origin,
+          );
+        }
+
+        const { user: me } = await fetchXMe(xTokens.access_token);
+        const user = await upsertUserFromX(env.JAMFUL_DB, me, { touchLogin: true });
+        const encrypted = await encryptSecret(xTokens.refresh_token, env);
+        await upsertOAuthCredential(
+          env.JAMFUL_DB,
+          user.id,
           me.id,
-          xApiBase,
+          encrypted,
+          xTokens.scope ?? null,
         );
-        await putProfile(env.JAMFUL_KV, me.id, {
-          name: me.name,
-          avatar_url: me.profile_image_url ?? "",
-        });
-        await setFollowingGraph(env.JAMFUL_KV, me.id, followingIds);
+        await queueGraphSyncRun(env.JAMFUL_DB, env.GRAPH_SYNC_QUEUE, user.id, "initial");
         const payload: JWTPayload = {
-          sub: me.id,
+          sub: user.id,
+          xid: me.id,
           name: me.name,
           av: me.profile_image_url ?? "",
         };
         const access_token = await signAccessToken(payload, env.JWT_SECRET, 60 * 60 * 24 * 30);
+        const status = await getGraphStatus(env.JAMFUL_DB, user.id);
         return json(
           {
             access_token,
             token_type: "Bearer",
-            user_id: me.id,
             x_username: me.username,
+            user: {
+              id: user.id,
+              x_user_id: me.id,
+              x_username: me.username,
+              name: me.name,
+              avatar_url: me.profile_image_url ?? "",
+            },
+            graph_sync: {
+              ...graphSummary(status),
+            },
           },
           200,
           origin,
@@ -157,6 +204,35 @@ export default {
         const message = e instanceof Error ? e.message : String(e);
         return json({ error: "x_auth_failed", message }, 400, origin);
       }
+    }
+
+    if (path === "/graph/resync" && request.method === "POST") {
+      const user = await authUser(request, env);
+      if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
+      const { run } = await queueGraphSyncRun(
+        env.JAMFUL_DB,
+        env.GRAPH_SYNC_QUEUE,
+        user.sub,
+        "manual",
+      );
+      const status = await getGraphStatus(env.JAMFUL_DB, user.sub);
+      return json(
+        {
+          sync_run_id: run.id,
+          status: run.status,
+          requested_at: run.requested_at,
+          last_synced_at: status.last_synced_at,
+        },
+        run.status === "queued" ? 202 : 200,
+        origin,
+      );
+    }
+
+    if (path === "/graph/status" && request.method === "GET") {
+      const user = await authUser(request, env);
+      if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
+      const status = await getGraphStatus(env.JAMFUL_DB, user.sub);
+      return json(status, 200, origin);
     }
 
     if (path === "/games" && request.method === "GET") {
@@ -211,39 +287,18 @@ export default {
     if (path === "/feed" && request.method === "GET") {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
-      const following = await getFollowing(env.JAMFUL_KV, user.sub);
       const games = await getRegistryGames(env);
+      const rows = await getActiveFeedRows(env.JAMFUL_DB, user.sub);
       const entries: FeedEntry[] = [];
-
-      await Promise.all(
-        following.map(async (friendId) => {
-          const stub = env.USER_PRESENCE.get(env.USER_PRESENCE.idFromName(friendId));
-          const pres = await stub.fetch(
-            new Request("https://do/state", {
-              headers: { "X-User-Id": friendId },
-            }),
-          );
-          const state = (await pres.json()) as {
-            active?: boolean;
-            session_id?: string;
-            game_id?: string;
-          };
-          if (!state.active || !state.session_id || !state.game_id) return;
-          const prof =
-            (await getProfile(env.JAMFUL_KV, friendId)) ?? {
-              name: friendId,
-              avatar_url: "",
-            };
-          const g = gameById(games, state.game_id);
-          if (!g) return;
-          entries.push({
-            friend: { name: prof.name, avatar_url: prof.avatar_url },
-            game: { name: g.name, url: g.url, icon_url: g.icon_url },
-            session_id: state.session_id,
-          });
-        }),
-      );
-
+      for (const row of rows) {
+        const game = gameById(games, row.game_id);
+        if (!game) continue;
+        entries.push({
+          friend: { name: row.friend_name, avatar_url: row.avatar_url },
+          game: { name: game.name, url: game.url, icon_url: game.icon_url },
+          session_id: row.session_id,
+        });
+      }
       return json(entries, 200, origin);
     }
 
@@ -251,18 +306,7 @@ export default {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
       const cursor = url.searchParams.get("cursor");
-      const stub = env.USER_INBOX.get(env.USER_INBOX.idFromName(user.sub));
-      const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-      const res = await stub.fetch(
-        new Request(`https://do/notifications${q}`, {
-          headers: { "X-User-Id": user.sub },
-        }),
-      );
-      const text = await res.text();
-      return new Response(text, {
-        status: res.status,
-        headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
-      });
+      return json(await listNotifications(env.JAMFUL_DB, user.sub, cursor), 200, origin);
     }
 
     if (path === "/health" && request.method === "GET") {
@@ -272,29 +316,21 @@ export default {
     return json({ error: "not_found" }, 404, origin);
   },
 
-  async queue(batch: MessageBatch<PresenceQueueMessage>, env: Env): Promise<void> {
-    for (const msg of batch.messages) {
-      try {
-        const { friend_user_id, session_id, game_id } = msg.body;
-        const followers = await getFollowers(env.JAMFUL_KV, friend_user_id);
-        for (const recipientId of followers) {
-          const stub = env.USER_INBOX.get(env.USER_INBOX.idFromName(recipientId));
-          await stub.fetch(
-            new Request("https://do/append", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "X-User-Id": recipientId },
-              body: JSON.stringify({
-                friend_user_id,
-                session_id,
-                game_id,
-              }),
-            }),
-          );
-        }
-        msg.ack();
-      } catch {
-        msg.retry();
+  async queue(batch: MessageBatch<GraphSyncQueueMessage | PresenceQueueMessage>, env: Env): Promise<void> {
+    if (batch.queue === "graph-sync") {
+      for (const msg of batch.messages as readonly Message<GraphSyncQueueMessage>[]) {
+        await handleGraphSyncMessage(env, msg);
       }
+      return;
     }
+
+    if (batch.queue === "presence-events") {
+      for (const msg of batch.messages as readonly Message<PresenceQueueMessage>[]) {
+        await handlePresenceQueueMessage(env, msg);
+      }
+      return;
+    }
+
+    batch.ackAll();
   },
 };

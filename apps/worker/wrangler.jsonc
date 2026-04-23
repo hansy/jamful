@@ -7,17 +7,36 @@
   "vars": {
     "JWT_ISSUER": "jamful",
     "SESSION_EXPIRY_MS": "120000",
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "development",
+    "X_FOLLOW_SYNC_MAX_PAGES": "25"
   },
   "kv_namespaces": [
     { "binding": "JAMFUL_KV", "id": "local-jamful-kv", "preview_id": "local-jamful-kv" }
   ],
+  "d1_databases": [
+    {
+      "binding": "JAMFUL_DB",
+      "database_name": "jamful",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "preview_database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
   "queues": {
-    "producers": [{ "binding": "PRESENCE_QUEUE", "queue": "presence-events" }],
+    "producers": [
+      { "binding": "PRESENCE_QUEUE", "queue": "presence-events" },
+      { "binding": "GRAPH_SYNC_QUEUE", "queue": "graph-sync" }
+    ],
     "consumers": [
       {
         "queue": "presence-events",
         "max_batch_size": 20,
+        "max_batch_timeout": 2,
+        "max_retries": 5
+      },
+      {
+        "queue": "graph-sync",
+        "max_batch_size": 1,
         "max_batch_timeout": 2,
         "max_retries": 5
       }

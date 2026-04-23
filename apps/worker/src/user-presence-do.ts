@@ -32,7 +32,7 @@ export class UserPresenceDO extends DurableObject {
     }
 
     if (request.method === "POST" && url.pathname.endsWith("/stop")) {
-      return this.handleStop();
+      return this.handleStop(userId);
     }
 
     return new Response("Not found", { status: 404 });
@@ -74,13 +74,16 @@ export class UserPresenceDO extends DurableObject {
       user_id: userId,
     };
     await this.ctx.storage.put("session", next);
+    await this.ctx.storage.setAlarm(now + exp);
 
     if (isNew) {
       const msg: PresenceQueueMessage = {
-        friend_user_id: userId,
+        kind: "session_started",
+        user_id: userId,
         session_id,
         game_id: gameId,
         started_at,
+        emitted_at: now,
       };
       await this.env.PRESENCE_QUEUE.send(msg);
     }
@@ -88,8 +91,43 @@ export class UserPresenceDO extends DurableObject {
     return Response.json({ ok: true, is_new_session: isNew });
   }
 
-  private async handleStop(): Promise<Response> {
+  private async handleStop(userId: string): Promise<Response> {
+    const prev = await this.ctx.storage.get<SessionBlob>("session");
     await this.ctx.storage.delete("session");
+    await this.ctx.storage.deleteAlarm();
+    if (prev) {
+      const msg: PresenceQueueMessage = {
+        kind: "session_stopped",
+        user_id: userId,
+        session_id: prev.session_id,
+        game_id: prev.game_id,
+        started_at: prev.started_at,
+        emitted_at: Date.now(),
+      };
+      await this.env.PRESENCE_QUEUE.send(msg);
+    }
     return Response.json({ ok: true });
+  }
+
+  async alarm(): Promise<void> {
+    const prev = await this.ctx.storage.get<SessionBlob>("session");
+    if (!prev) return;
+
+    const expired = Date.now() - prev.last_seen_at > this.sessionExpiryMs();
+    if (!expired) {
+      await this.ctx.storage.setAlarm(prev.last_seen_at + this.sessionExpiryMs());
+      return;
+    }
+
+    await this.ctx.storage.delete("session");
+    const msg: PresenceQueueMessage = {
+      kind: "session_stopped",
+      user_id: prev.user_id,
+      session_id: prev.session_id,
+      game_id: prev.game_id,
+      started_at: prev.started_at,
+      emitted_at: Date.now(),
+    };
+    await this.env.PRESENCE_QUEUE.send(msg);
   }
 }

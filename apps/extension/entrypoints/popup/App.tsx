@@ -1,5 +1,5 @@
-import { startTransition, useEffect, useEffectEvent, useState } from "react";
-import type { FeedEntry } from "@jamful/shared";
+import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
+import type { FeedEntry, GraphStatusResponse, GraphSyncStatus } from "@jamful/shared";
 import { browser } from "wxt/browser";
 import { JamfulApiClient } from "@jamful/extension-api";
 import {
@@ -26,6 +26,48 @@ const FEED_REFRESH_MS = 60_000;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatTimestamp(value: number | null): string {
+  if (value == null) return "Never";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function graphStatusHeadline(status: GraphSyncStatus): string {
+  switch (status) {
+    case "queued":
+      return "Sync queued";
+    case "running":
+      return "Syncing follows";
+    case "succeeded":
+      return "Graph is ready";
+    case "failed":
+      return "Sync failed";
+    case "never":
+    default:
+      return "Graph not synced yet";
+  }
+}
+
+function graphStatusCopy(status: GraphSyncStatus): string {
+  switch (status) {
+    case "queued":
+      return "Jamful will refresh your followed players in the background.";
+    case "running":
+      return "We’re checking which people you follow are already in Jamful.";
+    case "succeeded":
+      return "Your followed Jamful players are up to date.";
+    case "failed":
+      return "Try resyncing again. If it keeps failing, sign out and reconnect X.";
+    case "never":
+    default:
+      return "Run your first sync to discover which people you follow use Jamful.";
+  }
 }
 
 function initialsForName(name: string): string {
@@ -122,6 +164,10 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
+  const [graphStatus, setGraphStatus] = useState<GraphStatusResponse | null>(null);
+  const [graphSyncError, setGraphSyncError] = useState<string | null>(null);
+  const [resyncBusy, setResyncBusy] = useState(false);
+  const previousGraphStatusRef = useRef<GraphSyncStatus | null>(null);
 
   const apiBase = getConfiguredApiBaseOrNull();
   const configError = getConfiguredApiBaseError();
@@ -231,6 +277,30 @@ export default function App() {
     }
   });
 
+  const refreshGraphStatus = useEffectEvent(async () => {
+    if (!token || !apiBase) return;
+
+    try {
+      const client = new JamfulApiClient(apiBase, () => token);
+      const next = await client.getGraphStatus();
+      const previous = previousGraphStatusRef.current;
+      previousGraphStatusRef.current = next.status;
+      setGraphStatus(next);
+      setGraphSyncError(null);
+
+      if (
+        (previous === "queued" || previous === "running") &&
+        next.status === "succeeded"
+      ) {
+        await browser.runtime.sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE });
+      }
+    } catch (error) {
+      setGraphSyncError(errorMessage(error));
+    } finally {
+      setResyncBusy(false);
+    }
+  });
+
   useEffect(() => {
     if (!loggedIn) {
       setFeed([]);
@@ -243,6 +313,25 @@ export default function App() {
     const interval = window.setInterval(() => void refreshFeed(), FEED_REFRESH_MS);
     return () => window.clearInterval(interval);
   }, [loggedIn, refreshFeed]);
+
+  useEffect(() => {
+    if (!loggedIn || !token || !apiBase) {
+      setGraphStatus(null);
+      setGraphSyncError(null);
+      setResyncBusy(false);
+      previousGraphStatusRef.current = null;
+      return;
+    }
+    void refreshGraphStatus();
+  }, [apiBase, loggedIn, refreshGraphStatus, token]);
+
+  useEffect(() => {
+    if (graphStatus?.status !== "queued" && graphStatus?.status !== "running") {
+      return;
+    }
+    const interval = window.setInterval(() => void refreshGraphStatus(), 3000);
+    return () => window.clearInterval(interval);
+  }, [graphStatus?.status, refreshGraphStatus]);
 
   async function handleSignIn(): Promise<void> {
     if (!apiBase) {
@@ -294,10 +383,19 @@ export default function App() {
       });
       await browser.storage.local.set({
         accessToken: tokenRes.access_token,
-        xUsername: tokenRes.x_username,
+        xUsername: tokenRes.user.x_username,
       });
       setToken(tokenRes.access_token);
-      setXUsername(tokenRes.x_username);
+      setXUsername(tokenRes.user.x_username);
+      setGraphStatus({
+        status: tokenRes.graph_sync.status,
+        last_synced_at: tokenRes.graph_sync.last_synced_at,
+        error_message: tokenRes.graph_sync.error_message,
+        active_run: null,
+        last_run: null,
+      });
+      previousGraphStatusRef.current = tokenRes.graph_sync.status;
+      setGraphSyncError(tokenRes.graph_sync.error_message);
       setFeed([]);
       setFeedError(null);
     } catch (error) {
@@ -313,6 +411,10 @@ export default function App() {
     setXUsername(null);
     setAuthError(null);
     setVisibilityError(null);
+    setGraphStatus(null);
+    setGraphSyncError(null);
+    setResyncBusy(false);
+    previousGraphStatusRef.current = null;
     setFeed([]);
     setFeedError(null);
     setFeedLoading(false);
@@ -332,6 +434,26 @@ export default function App() {
       setVisibilityError(errorMessage(error));
     }
   }
+
+  async function handleResync(): Promise<void> {
+    if (!apiBase || !token) return;
+
+    setGraphSyncError(null);
+    setResyncBusy(true);
+    try {
+      const client = new JamfulApiClient(apiBase, () => token);
+      const res = await client.resyncGraph();
+      previousGraphStatusRef.current = res.status;
+      await refreshGraphStatus();
+    } catch (error) {
+      setGraphSyncError(errorMessage(error));
+      setResyncBusy(false);
+    }
+  }
+
+  const syncInFlight =
+    resyncBusy || graphStatus?.status === "queued" || graphStatus?.status === "running";
+  const visibleGraphError = graphSyncError ?? graphStatus?.error_message ?? null;
 
   return (
     <main className="jamful-popup">
@@ -405,11 +527,35 @@ export default function App() {
                 Sign out
               </button>
             </div>
+            <div className="jamful-popup__sync">
+              <div>
+                <p className="jamful-popup__label">Follow graph</p>
+                <p className="jamful-popup__syncHeadline">
+                  {graphStatus ? graphStatusHeadline(graphStatus.status) : "Checking sync status"}
+                </p>
+                <p className="jamful-popup__syncMeta">
+                  {graphStatus
+                    ? graphStatus.status === "succeeded" && graphStatus.last_synced_at != null
+                      ? `Last synced ${formatTimestamp(graphStatus.last_synced_at)}`
+                      : graphStatusCopy(graphStatus.status)
+                    : "Loading your sync state from the API."}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="jamful-popup__button jamful-popup__button--quiet"
+                onClick={() => void handleResync()}
+                disabled={syncInFlight}
+              >
+                {syncInFlight ? "Syncing..." : "Resync"}
+              </button>
+            </div>
             <PresenceSummary
               selfPresence={selfPresence}
               presenceInvisible={presenceInvisible}
             />
             {visibilityError && <p className="jamful-popup__error">{visibilityError}</p>}
+            {visibleGraphError && <p className="jamful-popup__error">{visibleGraphError}</p>}
           </section>
 
           <section className="jamful-popup__feed" aria-label="Friends playing now">

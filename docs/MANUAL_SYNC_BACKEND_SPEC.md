@@ -36,7 +36,7 @@ Use:
 ### Why this split
 
 - D1 is the right primitive for durable indexed relationships and queryable feeds.
-- Queue workers keep X sync and feed fanout off the request path.
+- Queue workers keep X sync and notification fanout off the request path.
 - Presence DOs avoid writing to D1 on every heartbeat.
 
 ## Data Model
@@ -126,24 +126,22 @@ CREATE INDEX idx_jamful_follow_edges_followee
   ON jamful_follow_edges (followee_user_id, follower_user_id);
 ```
 
-### `feed_active_entries`
+### `presence_current`
 
-Materialized active feed rows. This avoids probing one presence DO per followed user on every popup refresh.
+Query-friendly active presence state. This avoids probing one presence DO per followed user on every popup refresh.
 
 ```sql
-CREATE TABLE feed_active_entries (
-  owner_user_id TEXT NOT NULL,
-  friend_user_id TEXT NOT NULL,
+CREATE TABLE presence_current (
+  user_id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   game_id TEXT NOT NULL,
   started_at INTEGER NOT NULL,
-  PRIMARY KEY (owner_user_id, friend_user_id),
-  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (friend_user_id) REFERENCES users(id) ON DELETE CASCADE
+  last_seen_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_feed_active_entries_owner_started
-  ON feed_active_entries (owner_user_id, started_at DESC);
+CREATE INDEX idx_presence_current_started
+  ON presence_current (started_at DESC);
 ```
 
 ### `notifications`
@@ -252,6 +250,7 @@ Response:
 {
   "access_token": "<jamful-jwt>",
   "token_type": "Bearer",
+  "x_username": "elonmusk",
   "user": {
     "id": "usr_123",
     "x_user_id": "44196397",
@@ -261,7 +260,8 @@ Response:
   },
   "graph_sync": {
     "status": "queued",
-    "last_synced_at": null
+    "last_synced_at": null,
+    "error_message": null
   }
 }
 ```
@@ -323,7 +323,7 @@ Auth required.
 
 Implementation changes:
 
-- query `feed_active_entries` for the authenticated `owner_user_id`
+- query `jamful_follow_edges` joined with `presence_current`
 - join friend profile data from `users`
 - hydrate game metadata from the registry
 
@@ -395,7 +395,6 @@ For a given `GraphSyncQueueMessage`:
 7. In one transaction:
    - delete existing `jamful_follow_edges` for the user
    - insert the new edge set
-   - mark any existing `feed_active_entries` for removed friends as deleted
    - update `users.graph_sync_status`, `graph_last_synced_at`, `graph_last_error`
    - mark the run `succeeded`
 8. Return the number of Jamful edges found.
@@ -419,12 +418,12 @@ FROM jamful_follow_edges
 WHERE followee_user_id = ?;
 ```
 
-2. Upsert a `feed_active_entries` row for each follower.
+2. Upsert a `presence_current` row for the active user.
 3. Insert a `notifications` row for each follower if `(owner_user_id, session_id)` was not already inserted.
 
 For `session_stopped`:
 
-1. Delete `feed_active_entries` rows where `friend_user_id = ?`.
+1. Delete the `presence_current` row for that user and session.
 2. Do not delete old notifications.
 
 ## Extension Changes
@@ -503,7 +502,7 @@ Expected implementation areas:
 2. Keep existing KV + DO code running while new writes are dual-written if needed.
 3. Change auth flow to create internal users and store refresh tokens.
 4. Introduce graph sync queue and new graph status endpoints.
-5. Switch `/feed` reads to `feed_active_entries`.
+5. Switch `/feed` reads to `presence_current` joined with `jamful_follow_edges`.
 6. Switch `/notifications` reads to D1.
 7. Remove old KV graph storage and inbox DO once the new path is verified.
 

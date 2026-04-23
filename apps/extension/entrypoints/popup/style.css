@@ -232,6 +232,35 @@ button {
   white-space: nowrap;
 }
 
+.jamful-popup__sync {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--jamful-line);
+}
+
+.jamful-popup__syncHeadline,
+.jamful-popup__syncMeta {
+  margin: 0;
+}
+
+.jamful-popup__syncHeadline {
+  margin-top: 3px;
+  color: var(--jamful-ink);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.jamful-popup__syncMeta {
+  margin-top: 3px;
+  color: var(--jamful-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
 .jamful-popup__presence {
   display: grid;
   grid-template-columns: auto 1fr;
