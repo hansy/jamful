@@ -12,6 +12,16 @@ export function placeholders(count: number): string {
   return Array.from({ length: count }, () => "?").join(", ");
 }
 
+export const D1_MAX_BOUND_PARAMETERS = 100;
+
+export function maxChunkSizeForBoundQuery(extraBoundParameters = 0): number {
+  const size = D1_MAX_BOUND_PARAMETERS - extraBoundParameters;
+  if (size <= 0) {
+    throw new Error("extra bound parameter count exceeds D1 query limit");
+  }
+  return size;
+}
+
 export function parsePositiveInt(value: string | null | undefined, fallback: number): number {
   const parsed = value == null ? Number.NaN : parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;

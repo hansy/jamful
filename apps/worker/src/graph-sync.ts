@@ -1,6 +1,13 @@
 import { fetchXFollowingUserIds, fetchXMe, refreshXAccessToken } from "./auth-x";
 import { decryptSecret, encryptSecret } from "./crypto";
-import { chunked, errorMessage, parsePositiveInt, placeholders } from "./db";
+import {
+  chunked,
+  errorMessage,
+  maxChunkSizeForBoundQuery,
+  parsePositiveInt,
+  placeholders,
+} from "./db";
+import { graphSyncFailureMessage, logWorkerError } from "./public-errors";
 import type { GraphSyncQueueMessage } from "./types";
 import {
   getOAuthCredential,
@@ -39,7 +46,7 @@ async function replaceJamfulFollowEdges(
   const toDelete = [...current].filter((id) => !next.has(id));
   const toInsert = [...next].filter((id) => !current.has(id));
 
-  for (const chunk of chunked(toDelete, 100)) {
+  for (const chunk of chunked(toDelete, maxChunkSizeForBoundQuery(1))) {
     const query = `DELETE FROM jamful_follow_edges WHERE follower_user_id = ? AND followee_user_id IN (${placeholders(chunk.length)})`;
     await db.prepare(query).bind(followerUserId, ...chunk).run();
   }
@@ -127,7 +134,14 @@ export async function handleGraphSyncMessage(
     await markGraphSyncSucceeded(env.JAMFUL_DB, userId, runId, jamfulEdgesFound);
     msg.ack();
   } catch (error) {
-    await markGraphSyncFailed(env.JAMFUL_DB, userId, runId, errorMessage(error));
+    const publicMessage = graphSyncFailureMessage(error);
+    logWorkerError("followings sync failed", error, {
+      userId,
+      runId,
+      attempts: msg.attempts,
+      publicMessage,
+    });
+    await markGraphSyncFailed(env.JAMFUL_DB, userId, runId, publicMessage);
     if (msg.attempts < 3 && isRetryable(error)) {
       msg.retry();
       return;

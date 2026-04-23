@@ -19,6 +19,7 @@ import {
   type PopupSelfPresence,
 } from "../lib/self-presence";
 import { applyToolbarPresentation } from "../lib/toolbar-icon";
+import { userFriendlyError } from "../lib/user-facing-errors";
 
 const HEARTBEAT_ALARM = "jamful-heartbeat";
 const FEED_ALARM = "jamful-feed";
@@ -148,8 +149,7 @@ async function sendHeartbeat(
     await client.heartbeat(game.id);
     await setSelfPresenceActive(game);
     return true;
-  } catch (e) {
-    console.warn("[jamful] heartbeat failed", e);
+  } catch {
     return false;
   }
 }
@@ -158,8 +158,8 @@ async function sendStopPresence(auth: { base: string; token: string }): Promise<
   try {
     const client = new JamfulApiClient(auth.base, () => auth.token);
     await client.stopPresence();
-  } catch (e) {
-    console.warn("[jamful] presence stop failed", e);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -335,15 +335,17 @@ async function refreshFeedCache(force = false): Promise<void> {
         fetchedAt: Date.now(),
         error: null,
       });
-    } catch (e) {
-      console.warn("[jamful] feed fetch failed", e);
+    } catch (error) {
       if (friendsPlayingCount === null) {
         friendsPlayingCount = existing.entries.length;
       }
       await writeFeedCache({
         entries: existing.entries,
         fetchedAt: existing.fetchedAt,
-        error: e instanceof Error ? e.message : String(e),
+        error: userFriendlyError(
+          error,
+          "Jamful couldn't refresh the activity list. Try again shortly.",
+        ),
       });
     }
     await refreshToolbarPresentation();

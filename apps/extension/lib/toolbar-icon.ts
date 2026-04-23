@@ -257,7 +257,7 @@ export async function applyToolbarPresentation(p: ToolbarPresentation): Promise<
       lastTitle = nextTitle;
       await browser.action.setTitle({ title: nextTitle });
     }
-  } catch (e) {
-    console.warn("[jamful] toolbar presentation failed", e);
+  } catch {
+    /* ignore */
   }
 }

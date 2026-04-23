@@ -29,16 +29,47 @@ export type XTokenResponse = AuthTokens & {
 
 export type GraphResyncResponse = {
   sync_run_id: string;
-  status: "queued" | "running";
+  status: GraphStatusResponse["status"];
   requested_at: number;
   last_synced_at: number | null;
+  throttled?: boolean;
 };
+
+type ApiErrorBody = {
+  error?: unknown;
+  message?: unknown;
+};
+
+export class JamfulApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, code: string | null, message: string) {
+    super(message);
+    this.name = "JamfulApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
 
 export class JamfulApiClient {
   constructor(
     private baseUrl: string,
     private getToken: () => string | null,
   ) {}
+
+  private async readBody<T>(res: Response): Promise<T> {
+    const text = await res.text();
+    if (!text) {
+      return undefined as T;
+    }
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text as T;
+    }
+  }
 
   private async request<T>(
     path: string,
@@ -53,10 +84,21 @@ export class JamfulApiClient {
     const url = `${this.baseUrl.replace(/\/$/, "")}${path}`;
     const res = await fetch(url, { ...rest, headers });
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`API ${res.status}: ${text || res.statusText}`);
+      const body = await this.readBody<ApiErrorBody | string>(res);
+      const payload =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as ApiErrorBody)
+          : null;
+      const code = typeof payload?.error === "string" ? payload.error : null;
+      const message =
+        typeof payload?.message === "string"
+          ? payload.message
+          : typeof body === "string" && body.trim()
+            ? body
+            : res.statusText || `Request failed (${res.status})`;
+      throw new JamfulApiError(res.status, code, message);
     }
-    return res.json() as Promise<T>;
+    return this.readBody<T>(res);
   }
 
   async getGames(): Promise<Game[]> {

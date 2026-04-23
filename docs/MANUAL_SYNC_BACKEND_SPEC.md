@@ -8,20 +8,20 @@ This document defines the backend rework for Jamful's "manual resync" model.
 - Store only Jamful-to-Jamful follow edges.
 - Keep feed reads cheap.
 - Keep heartbeats cheap.
-- Make graph updates explicit via sign-in and a manual `Resync` button.
+- Make followings-list updates explicit via sign-in and a manual sync action.
 
 ## Non-Goals
 
 - No automatic discovery when someone you follow later joins Jamful.
-- No persistence of a user's full X follow graph.
-- No requirement to keep the graph continuously fresh.
+- No persistence of a user's full X followings graph.
+- No requirement to keep the followings list continuously fresh.
 
 ## Product Behavior
 
-- Initial sign-in creates or updates the Jamful user account, stores the X refresh token, and queues an initial graph sync.
-- The popup shows sync status and a `Resync` button.
-- Pressing `Resync` queues a new graph sync.
-- The follow graph only changes after sign-in or manual resync.
+- Initial sign-in creates or updates the Jamful user account, stores the X refresh token, and queues an initial followings sync.
+- The popup exposes a sync action for the followings list.
+- Pressing sync queues a new followings sync.
+- The stored followings list only changes after sign-in or manual sync.
 - If someone a user follows joins Jamful after the last sync, they do not appear until the next manual sync.
 
 ## Architecture
@@ -432,16 +432,15 @@ For `session_stopped`:
 
 Add:
 
-- `Resync` button
-- sync status line
-- last synced timestamp
-- error message if the last sync failed
+- sync icon next to the followings count
+- hover copy: `Sync your followings list`
 
 Button behavior:
 
-- disabled while status is `queued` or `running`
 - on click, call `POST /graph/resync`
-- after queueing, poll `GET /graph/status` every few seconds until completion or popup closes
+- repeat clicks are allowed from the UI
+- backend rate limits followings sync requests and may no-op repeated clicks
+- poll `GET /graph/status` every few seconds until completion or popup closes
 - when sync finishes successfully, send `jamful:refresh-feed` to the background
 
 ### Background

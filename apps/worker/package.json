@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --env-file .env.local",
+    "dev": "bun run dev:setup && bun run migrate:local && wrangler dev --env-file .env.local",
+    "dev:setup": "bun ./scripts/dev-setup.ts",
+    "migrate:local": "wrangler d1 migrations apply jamful --local",
     "deploy": "wrangler deploy",
     "cf-types": "wrangler types --env-file .env.cf-generate",
     "typecheck": "tsc --noEmit -p tsconfig.json"

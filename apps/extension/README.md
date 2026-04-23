@@ -1,5 +1,19 @@
 # Jamful extension
 
+## Local API
+
+From the repo root, start the Worker API with:
+
+```bash
+bun run dev:worker
+```
+
+This now bootstraps local Worker dev automatically: it creates `apps/worker/.env.local`
+from `apps/worker/.env.example` if needed, fills in local-only defaults for
+`JWT_SECRET` and `X_REFRESH_TOKEN_ENC_KEY`, and applies local D1 migrations before
+starting `wrangler dev`. You still need to set `X_CLIENT_ID` in `apps/worker/.env.local`,
+and `X_CLIENT_SECRET` if your X app requires it.
+
 ## Load unpacked in Chrome (dev)
 
 1. Optional: override the Jamful API URL for the extension build:

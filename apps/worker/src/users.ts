@@ -6,7 +6,8 @@ import type {
 } from "@jamful/shared";
 import type { XUser } from "./auth-x";
 import type { EncryptedSecretRecord } from "./crypto";
-import { chunked, placeholders } from "./db";
+import { chunked, maxChunkSizeForBoundQuery, placeholders } from "./db";
+import { graphSyncFailureMessage, logWorkerError } from "./public-errors";
 import type { GraphSyncQueueMessage } from "./types";
 
 export type UserRow = {
@@ -260,22 +261,59 @@ export async function getActiveGraphSyncRun(
   return mapRun(row);
 }
 
+export async function getLatestGraphSyncRun(
+  db: D1Database,
+  userId: string,
+): Promise<GraphSyncRunSummary | null> {
+  const row = await db
+    .prepare(
+      `SELECT
+        id,
+        trigger,
+        status,
+        requested_at,
+        started_at,
+        finished_at,
+        jamful_edges_found,
+        error_message
+      FROM graph_sync_runs
+      WHERE user_id = ?
+      ORDER BY requested_at DESC
+      LIMIT 1`,
+    )
+    .bind(userId)
+    .first<GraphSyncRunRow>();
+  return mapRun(row);
+}
+
 export async function queueGraphSyncRun(
   db: D1Database,
   queue: Queue<GraphSyncQueueMessage>,
   userId: string,
   trigger: GraphSyncTrigger,
-): Promise<{ run: GraphSyncRunSummary; created: boolean }> {
+  options: { minIntervalMs?: number } = {},
+): Promise<{ run: GraphSyncRunSummary; created: boolean; throttled: boolean }> {
+  const now = Date.now();
   const active = await getActiveGraphSyncRun(db, userId);
   if (active) {
-    return { run: active, created: false };
+    const throttled =
+      options.minIntervalMs != null &&
+      now - active.requested_at < options.minIntervalMs;
+    return { run: active, created: false, throttled };
+  }
+
+  if (options.minIntervalMs != null) {
+    const latest = await getLatestGraphSyncRun(db, userId);
+    if (latest && now - latest.requested_at < options.minIntervalMs) {
+      return { run: latest, created: false, throttled: true };
+    }
   }
 
   const run: GraphSyncRunSummary = {
     id: `sync_${crypto.randomUUID()}`,
     trigger,
     status: "queued",
-    requested_at: Date.now(),
+    requested_at: now,
     started_at: null,
     finished_at: null,
     jamful_edges_found: null,
@@ -315,9 +353,16 @@ export async function queueGraphSyncRun(
       trigger,
       requested_at: run.requested_at,
     });
-    return { run, created: true };
+    return { run, created: true, throttled: false };
   } catch (error) {
-    await markGraphSyncFailed(db, userId, run.id, error instanceof Error ? error.message : String(error));
+    const publicMessage = graphSyncFailureMessage(error);
+    logWorkerError("followings sync enqueue failed", error, {
+      userId,
+      runId: run.id,
+      trigger,
+      publicMessage,
+    });
+    await markGraphSyncFailed(db, userId, run.id, publicMessage);
     throw error;
   }
 }
@@ -468,7 +513,7 @@ export async function lookupJamfulUserIdsByXUserIds(
   if (uniqueXUserIds.length === 0) return [];
 
   const out = new Set<string>();
-  for (const chunk of chunked(uniqueXUserIds, 200)) {
+  for (const chunk of chunked(uniqueXUserIds, maxChunkSizeForBoundQuery(1))) {
     const query = `SELECT id FROM users WHERE x_user_id IN (${placeholders(chunk.length)}) AND id != ?`;
     const rows = await db.prepare(query).bind(...chunk, excludeUserId).all<{ id: string }>();
     for (const row of rows.results) {

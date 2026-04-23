@@ -15,6 +15,13 @@ import { gameById, getRegistryGames } from "./games";
 import { handleGraphSyncMessage } from "./graph-sync";
 import { listNotifications } from "./notifications";
 import { handlePresenceQueueMessage } from "./presence-events";
+import {
+  logWorkerError,
+  logWorkerEvent,
+  sanitizeGraphSyncMessage,
+  signInFailedMessage,
+  signInUnavailableMessage,
+} from "./public-errors";
 import type { GraphSyncQueueMessage, JWTPayload, PresenceQueueMessage } from "./types";
 import { UserInboxDO } from "./user-inbox-do";
 import { UserPresenceDO } from "./user-presence-do";
@@ -26,6 +33,8 @@ import {
 } from "./users";
 
 export { UserInboxDO, UserPresenceDO };
+
+const MANUAL_FOLLOWINGS_SYNC_MIN_INTERVAL_MS = 60_000;
 
 function corsHeaders(origin: string | null): HeadersInit {
   return {
@@ -58,8 +67,40 @@ function graphSummary(status: GraphStatusResponse) {
   return {
     status: status.status,
     last_synced_at: status.last_synced_at,
-    error_message: status.error_message,
+    error_message: sanitizeGraphSyncMessage(status.error_message),
   };
+}
+
+function sanitizeGraphStatus(status: GraphStatusResponse): GraphStatusResponse {
+  return {
+    ...status,
+    error_message: sanitizeGraphSyncMessage(status.error_message),
+    active_run: status.active_run
+      ? {
+          ...status.active_run,
+          error_message: sanitizeGraphSyncMessage(status.active_run.error_message),
+        }
+      : null,
+    last_run: status.last_run
+      ? {
+          ...status.last_run,
+          error_message: sanitizeGraphSyncMessage(status.last_run.error_message),
+        }
+      : null,
+  };
+}
+
+function misconfiguredResponse(
+  origin: string | null,
+  route: string,
+  missing: string,
+): Response {
+  logWorkerEvent("worker misconfigured", { route, missing });
+  return json(
+    { error: "misconfigured", message: signInUnavailableMessage() },
+    503,
+    origin,
+  );
 }
 
 export default {
@@ -75,7 +116,7 @@ export default {
     if (path === "/auth/x/authorize-url" && request.method === "POST") {
       const clientId = env.X_CLIENT_ID;
       if (!clientId) {
-        return json({ error: "misconfigured", message: "X_CLIENT_ID is not set" }, 503, origin);
+        return misconfiguredResponse(origin, path, "X_CLIENT_ID");
       }
       const body = (await request.json()) as {
         code_challenge?: string;
@@ -109,21 +150,13 @@ export default {
       const clientId = env.X_CLIENT_ID?.trim();
       const clientSecret = env.X_CLIENT_SECRET?.trim() || undefined;
       if (!clientId) {
-        return json(
-          { error: "misconfigured", message: "X_CLIENT_ID must be set" },
-          503,
-          origin,
-        );
+        return misconfiguredResponse(origin, path, "X_CLIENT_ID");
       }
       if (!env.JWT_SECRET) {
-        return json({ error: "misconfigured", message: "JWT_SECRET must be set" }, 503, origin);
+        return misconfiguredResponse(origin, path, "JWT_SECRET");
       }
       if (!env.X_REFRESH_TOKEN_ENC_KEY?.trim()) {
-        return json(
-          { error: "misconfigured", message: "X_REFRESH_TOKEN_ENC_KEY must be set" },
-          503,
-          origin,
-        );
+        return misconfiguredResponse(origin, path, "X_REFRESH_TOKEN_ENC_KEY");
       }
       const body = (await request.json()) as {
         code?: string;
@@ -152,10 +185,11 @@ export default {
           redirectUri: body.redirect_uri,
         });
         if (!xTokens.refresh_token) {
+          logWorkerEvent("x auth missing refresh token", { route: path });
           return json(
             {
               error: "missing_refresh_token",
-              message: "X did not return a refresh token. Ensure offline.access is enabled.",
+              message: signInFailedMessage(),
             },
             503,
             origin,
@@ -203,19 +237,24 @@ export default {
           origin,
         );
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return json({ error: "x_auth_failed", message }, 400, origin);
+        logWorkerError("x auth token exchange failed", e, { route: path });
+        return json(
+          { error: "x_auth_failed", message: signInFailedMessage() },
+          400,
+          origin,
+        );
       }
     }
 
     if (path === "/graph/resync" && request.method === "POST") {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
-      const { run } = await queueGraphSyncRun(
+      const { run, throttled } = await queueGraphSyncRun(
         env.JAMFUL_DB,
         env.GRAPH_SYNC_QUEUE,
         user.sub,
         "manual",
+        { minIntervalMs: MANUAL_FOLLOWINGS_SYNC_MIN_INTERVAL_MS },
       );
       const status = await getGraphStatus(env.JAMFUL_DB, user.sub);
       return json(
@@ -224,8 +263,9 @@ export default {
           status: run.status,
           requested_at: run.requested_at,
           last_synced_at: status.last_synced_at,
+          throttled,
         },
-        run.status === "queued" ? 202 : 200,
+        throttled ? 200 : run.status === "queued" ? 202 : 200,
         origin,
       );
     }
@@ -234,7 +274,7 @@ export default {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
       const status = await getGraphStatus(env.JAMFUL_DB, user.sub);
-      return json(status, 200, origin);
+      return json(sanitizeGraphStatus(status), 200, origin);
     }
 
     if (path === "/games" && request.method === "GET") {

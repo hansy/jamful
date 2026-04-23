@@ -1,5 +1,15 @@
-import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
-import type { FeedEntry, GraphStatusResponse, GraphSyncStatus } from "@jamful/shared";
+import {
+  startTransition,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
+import type {
+  FeedEntry,
+  GraphStatusResponse,
+  GraphSyncStatus,
+} from "@jamful/shared";
 import { browser } from "wxt/browser";
 import { JamfulApiClient } from "@jamful/extension-api";
 import {
@@ -21,6 +31,12 @@ import {
   type PopupSelfPresence,
 } from "../../lib/self-presence";
 import { createPkcePair } from "./pkce";
+import {
+  sanitizeServerMessage,
+  userFriendlyConfigError,
+  userFriendlyError,
+  userFriendlyOAuthError,
+} from "../../lib/user-facing-errors";
 
 import {
   Avatar,
@@ -36,56 +52,24 @@ import {
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { ChevronDown, Eye, EyeOff, Gamepad2, LogOut, Play } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Gamepad2,
+  LogOut,
+  Play,
+  RefreshCw,
+} from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const FEED_REFRESH_MS = 60_000;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function formatTimestamp(value: number | null): string {
-  if (value == null) return "Never";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function graphStatusHeadline(status: GraphSyncStatus): string {
-  switch (status) {
-    case "queued":
-      return "Sync queued";
-    case "running":
-      return "Syncing follows";
-    case "succeeded":
-      return "Graph is ready";
-    case "failed":
-      return "Sync failed";
-    case "never":
-    default:
-      return "Graph not synced yet";
-  }
-}
-
-function graphStatusCopy(status: GraphSyncStatus): string {
-  switch (status) {
-    case "queued":
-      return "Jamful will refresh your followed players in the background.";
-    case "running":
-      return "We’re checking which people you follow are already in Jamful.";
-    case "succeeded":
-      return "Your followed Jamful players are up to date.";
-    case "failed":
-      return "Try resyncing again. If it keeps failing, sign out and reconnect X.";
-    case "never":
-    default:
-      return "Run your first sync to discover which people you follow use Jamful.";
-  }
-}
 
 function initialsForName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
@@ -136,7 +120,8 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
         <p className="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-muted-foreground">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
           <span className="truncate">
-            Playing <span className="font-medium text-foreground">{gameName}</span>
+            Playing{" "}
+            <span className="font-medium text-foreground">{gameName}</span>
           </span>
         </p>
       </div>
@@ -169,13 +154,17 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
-  const [graphStatus, setGraphStatus] = useState<GraphStatusResponse | null>(null);
-  const [graphSyncError, setGraphSyncError] = useState<string | null>(null);
-  const [resyncBusy, setResyncBusy] = useState(false);
-  const previousGraphStatusRef = useRef<GraphSyncStatus | null>(null);
+  const [followingsSyncStatus, setFollowingsSyncStatus] =
+    useState<GraphStatusResponse | null>(null);
+  const [followingsSyncError, setFollowingsSyncError] = useState<string | null>(
+    null,
+  );
+  const [syncFollowingsBusy, setSyncFollowingsBusy] = useState(false);
+  const previousFollowingsSyncStatusRef = useRef<GraphSyncStatus | null>(null);
 
   const apiBase = getConfiguredApiBaseOrNull();
   const configError = getConfiguredApiBaseError();
+  const visibleConfigError = userFriendlyConfigError(configError);
   const loggedIn = !!token;
 
   useEffect(() => {
@@ -208,7 +197,12 @@ export default function App() {
       );
       setFeed(feedCache.entries);
       setFeedFetchedAt(feedCache.fetchedAt);
-      setFeedError(feedCache.error);
+      setFeedError(
+        sanitizeServerMessage(
+          feedCache.error,
+          "Jamful couldn't refresh the activity list. Try again shortly.",
+        ),
+      );
       setSelfPresence(
         coercePopupSelfPresence(stored[POPUP_SELF_PRESENCE_STORAGE_KEY]),
       );
@@ -253,7 +247,12 @@ export default function App() {
         );
         setFeed(feedCache.entries);
         setFeedFetchedAt(feedCache.fetchedAt);
-        setFeedError(feedCache.error);
+        setFeedError(
+          sanitizeServerMessage(
+            feedCache.error,
+            "Jamful couldn't refresh the activity list. Try again shortly.",
+          ),
+        );
       }
       if (changes[POPUP_SELF_PRESENCE_STORAGE_KEY]) {
         setSelfPresence(
@@ -289,7 +288,9 @@ export default function App() {
     if (!token) return;
     if (!apiBase) {
       startTransition(() => {
-        setFeedError(configError ?? "The Jamful API URL is not configured.");
+        setFeedError(
+          visibleConfigError ?? "Jamful isn't ready yet. Try again shortly.",
+        );
       });
       return;
     }
@@ -298,21 +299,26 @@ export default function App() {
       .sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE })
       .catch((error) => {
         startTransition(() => {
-          setFeedError(errorMessage(error));
+          setFeedError(
+            userFriendlyError(
+              error,
+              "Jamful couldn't refresh the activity list. Try again shortly.",
+            ),
+          );
         });
       });
   });
 
-  const refreshGraphStatus = useEffectEvent(async () => {
+  const refreshFollowingsSyncStatus = useEffectEvent(async () => {
     if (!token || !apiBase) return;
 
     try {
       const client = new JamfulApiClient(apiBase, () => token);
       const next = await client.getGraphStatus();
-      const previous = previousGraphStatusRef.current;
-      previousGraphStatusRef.current = next.status;
-      setGraphStatus(next);
-      setGraphSyncError(null);
+      const previous = previousFollowingsSyncStatusRef.current;
+      previousFollowingsSyncStatusRef.current = next.status;
+      setFollowingsSyncStatus(next);
+      setFollowingsSyncError(null);
 
       if (
         (previous === "queued" || previous === "running") &&
@@ -321,9 +327,14 @@ export default function App() {
         await browser.runtime.sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE });
       }
     } catch (error) {
-      setGraphSyncError(errorMessage(error));
+      setFollowingsSyncError(
+        userFriendlyError(
+          error,
+          "Jamful couldn't load your followings sync. Try again shortly.",
+        ),
+      );
     } finally {
-      setResyncBusy(false);
+      setSyncFollowingsBusy(false);
     }
   });
 
@@ -341,30 +352,38 @@ export default function App() {
       FEED_REFRESH_MS,
     );
     return () => window.clearInterval(interval);
-  }, [loggedIn, refreshFeed]);
+  }, [loggedIn]);
 
   useEffect(() => {
     if (!loggedIn || !token || !apiBase) {
-      setGraphStatus(null);
-      setGraphSyncError(null);
-      setResyncBusy(false);
-      previousGraphStatusRef.current = null;
+      setFollowingsSyncStatus(null);
+      setFollowingsSyncError(null);
+      setSyncFollowingsBusy(false);
+      previousFollowingsSyncStatusRef.current = null;
       return;
     }
-    void refreshGraphStatus();
-  }, [apiBase, loggedIn, refreshGraphStatus, token]);
+    void refreshFollowingsSyncStatus();
+  }, [apiBase, loggedIn, token]);
 
   useEffect(() => {
-    if (graphStatus?.status !== "queued" && graphStatus?.status !== "running") {
+    if (
+      followingsSyncStatus?.status !== "queued" &&
+      followingsSyncStatus?.status !== "running"
+    ) {
       return;
     }
-    const interval = window.setInterval(() => void refreshGraphStatus(), 3000);
+    const interval = window.setInterval(
+      () => void refreshFollowingsSyncStatus(),
+      3000,
+    );
     return () => window.clearInterval(interval);
-  }, [graphStatus?.status, refreshGraphStatus]);
+  }, [followingsSyncStatus?.status]);
 
   async function handleSignIn(): Promise<void> {
     if (!apiBase) {
-      setAuthError(configError ?? "The Jamful API URL is not configured.");
+      setAuthError(
+        visibleConfigError ?? "Jamful isn't ready for sign-in right now.",
+      );
       return;
     }
 
@@ -391,18 +410,17 @@ export default function App() {
       }
       const r = new URL(responseUrl);
       const err = r.searchParams.get("error");
-      const desc = r.searchParams.get("error_description");
       if (err) {
-        setAuthError(`${err}${desc ? `: ${desc}` : ""}`);
+        setAuthError(userFriendlyOAuthError(err));
         return;
       }
       if (r.searchParams.get("state") !== state) {
-        setAuthError("OAuth state mismatch; try again.");
+        setAuthError("Jamful couldn't verify the sign-in. Try again.");
         return;
       }
       const code = r.searchParams.get("code");
       if (!code) {
-        setAuthError("No authorization code returned.");
+        setAuthError("Jamful couldn't finish signing you in. Try again.");
         return;
       }
       const tokenRes = await c.exchangeXToken({
@@ -412,7 +430,9 @@ export default function App() {
       });
       const nextUsername = tokenRes.user.x_username || tokenRes.x_username;
       const nextAvatarUrl =
-        tokenRes.avatar_url || tokenRes.user.avatar_url || avatarUrlFromAccessToken(tokenRes.access_token);
+        tokenRes.avatar_url ||
+        tokenRes.user.avatar_url ||
+        avatarUrlFromAccessToken(tokenRes.access_token);
       await browser.storage.local.set({
         accessToken: tokenRes.access_token,
         xUsername: nextUsername,
@@ -421,20 +441,33 @@ export default function App() {
       setToken(tokenRes.access_token);
       setXUsername(nextUsername);
       setXAvatarUrl(nextAvatarUrl);
-      setGraphStatus({
+      setFollowingsSyncStatus({
         status: tokenRes.graph_sync.status,
         last_synced_at: tokenRes.graph_sync.last_synced_at,
-        error_message: tokenRes.graph_sync.error_message,
+        error_message: sanitizeServerMessage(
+          tokenRes.graph_sync.error_message,
+          "Jamful couldn't refresh your followings list right now. Try again later.",
+        ),
         active_run: null,
         last_run: null,
       });
-      previousGraphStatusRef.current = tokenRes.graph_sync.status;
-      setGraphSyncError(tokenRes.graph_sync.error_message);
+      previousFollowingsSyncStatusRef.current = tokenRes.graph_sync.status;
+      setFollowingsSyncError(
+        sanitizeServerMessage(
+          tokenRes.graph_sync.error_message,
+          "Jamful couldn't refresh your followings list right now. Try again later.",
+        ),
+      );
       setFeed([]);
       setFeedFetchedAt(null);
       setFeedError(null);
     } catch (error) {
-      setAuthError(errorMessage(error));
+      setAuthError(
+        userFriendlyError(
+          error,
+          "Jamful couldn't finish signing you in. Try again.",
+        ),
+      );
     } finally {
       setLoginBusy(false);
     }
@@ -451,10 +484,10 @@ export default function App() {
     setXAvatarUrl(null);
     setAuthError(null);
     setVisibilityError(null);
-    setGraphStatus(null);
-    setGraphSyncError(null);
-    setResyncBusy(false);
-    previousGraphStatusRef.current = null;
+    setFollowingsSyncStatus(null);
+    setFollowingsSyncError(null);
+    setSyncFollowingsBusy(false);
+    previousFollowingsSyncStatusRef.current = null;
     setFeed([]);
     setFeedFetchedAt(null);
     setFeedError(null);
@@ -471,23 +504,33 @@ export default function App() {
       await browser.storage.local.set({ presenceInvisible: next });
     } catch (error) {
       setPresenceInvisible(!next);
-      setVisibilityError(errorMessage(error));
+      setVisibilityError(
+        userFriendlyError(
+          error,
+          "Jamful couldn't update your visibility setting. Try again.",
+        ),
+      );
     }
   }
 
-  async function handleResync(): Promise<void> {
+  async function handleSyncFollowings(): Promise<void> {
     if (!apiBase || !token) return;
 
-    setGraphSyncError(null);
-    setResyncBusy(true);
+    setFollowingsSyncError(null);
+    setSyncFollowingsBusy(true);
     try {
       const client = new JamfulApiClient(apiBase, () => token);
       const res = await client.resyncGraph();
-      previousGraphStatusRef.current = res.status;
-      await refreshGraphStatus();
+      previousFollowingsSyncStatusRef.current = res.status;
+      await refreshFollowingsSyncStatus();
     } catch (error) {
-      setGraphSyncError(errorMessage(error));
-      setResyncBusy(false);
+      setFollowingsSyncError(
+        userFriendlyError(
+          error,
+          "Jamful couldn't refresh your followings list right now. Try again later.",
+        ),
+      );
+      setSyncFollowingsBusy(false);
     }
   }
 
@@ -496,10 +539,25 @@ export default function App() {
   const showInitialFeedLoading =
     loggedIn && feed.length === 0 && feedFetchedAt == null && feedError == null;
   const syncInFlight =
-    resyncBusy ||
-    graphStatus?.status === "queued" ||
-    graphStatus?.status === "running";
-  const visibleGraphError = graphSyncError ?? graphStatus?.error_message ?? null;
+    syncFollowingsBusy ||
+    followingsSyncStatus?.status === "queued" ||
+    followingsSyncStatus?.status === "running";
+  const hasSyncIssue =
+    followingsSyncStatus?.status === "failed" ||
+    followingsSyncError != null ||
+    followingsSyncStatus?.error_message != null;
+  const emptyStateTitle = showInitialFeedLoading
+    ? "Loading list..."
+    : syncInFlight
+      ? "Syncing followings..."
+      : hasSyncIssue
+        ? "Couldn't refresh followings yet"
+        : "Nobody is playing right now";
+  const emptyStateCopy = syncInFlight
+    ? ""
+    : hasSyncIssue
+      ? "Try syncing again in a minute."
+      : "";
 
   if (!loggedIn) {
     return (
@@ -523,9 +581,9 @@ export default function App() {
             >
               {loginBusy ? "Signing in..." : "Sign in with X"}
             </Button>
-            {(authError || configError) && (
+            {(authError || visibleConfigError) && (
               <p className="text-sm font-medium text-destructive">
-                {authError ?? configError}
+                {authError ?? visibleConfigError}
               </p>
             )}
           </div>
@@ -614,48 +672,10 @@ export default function App() {
 
       <ScrollArea className="flex-1">
         <div className="space-y-1.5 p-1.5">
-          {(visibilityError || graphStatus || visibleGraphError) && (
-            <section className="space-y-1.5 px-1.5 pt-1">
-              {visibilityError && (
-                <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
-                  {visibilityError}
-                </div>
-              )}
-              <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Follow graph
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-foreground">
-                      {graphStatus
-                        ? graphStatusHeadline(graphStatus.status)
-                        : "Checking sync status"}
-                    </p>
-                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                      {graphStatus
-                        ? graphStatus.status === "succeeded" &&
-                          graphStatus.last_synced_at != null
-                          ? `Last synced ${formatTimestamp(graphStatus.last_synced_at)}`
-                          : graphStatusCopy(graphStatus.status)
-                        : "Loading your sync state from the API."}
-                    </p>
-                    {visibleGraphError && (
-                      <p className="mt-1.5 text-[11px] leading-4 text-destructive">
-                        {visibleGraphError}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 shrink-0"
-                    onClick={() => void handleResync()}
-                    disabled={!apiBase || syncInFlight}
-                  >
-                    {syncInFlight ? "Syncing..." : "Resync"}
-                  </Button>
-                </div>
+          {visibilityError && (
+            <section className="px-1.5 pt-1">
+              <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+                {visibilityError}
               </div>
             </section>
           )}
@@ -664,9 +684,35 @@ export default function App() {
             <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               People you follow
             </h2>
-            <span className="rounded-sm bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">
-              {feed.length}
-            </span>
+            <div className="flex items-center gap-1">
+              <span className="rounded-sm bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">
+                {feed.length}
+              </span>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+                      onClick={() => void handleSyncFollowings()}
+                      disabled={!apiBase}
+                      aria-label="Sync your followings list"
+                    >
+                      <RefreshCw
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          syncInFlight && "animate-spin",
+                        )}
+                      />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    Sync your followings list
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
 
           {feed.length > 0 ? (
@@ -684,16 +730,10 @@ export default function App() {
                 <Gamepad2 className="h-6 w-6 text-muted-foreground/50" />
               </div>
               <p className="text-sm font-medium text-foreground">
-                {showInitialFeedLoading
-                  ? "Loading list..."
-                  : syncInFlight
-                    ? "Syncing follows..."
-                    : "Nobody is playing right now"}
+                {emptyStateTitle}
               </p>
               <p className="mt-1.5 text-xs text-muted-foreground">
-                {syncInFlight
-                  ? "New matches will appear after the follow graph refresh finishes."
-                  : "Open the popup later to check again."}
+                {emptyStateCopy}
               </p>
             </div>
           )}
