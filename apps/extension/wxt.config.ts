@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "wxt";
+import { loadEnv } from "vite";
+import { apiHostPermissionPattern, normalizeApiBase } from "./lib/api-base";
 
 const extensionRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(extensionRoot, "..", "..");
@@ -36,6 +38,11 @@ function hostPermissionPatterns(games: { url: string }[]): string[] {
 
 const allowlistHosts = hostPermissionPatterns(loadRegistryGames());
 
+function loadApiBase(mode: string): string {
+  const env = loadEnv(mode, extensionRoot, ["WXT_"]);
+  return normalizeApiBase(env.WXT_API_BASE_URL);
+}
+
 /**
  * Pin `vite` to 6.x in package.json — Vite 8 + Rolldown can throw `Missing field moduleType` in dev
  * (`builtin:vite-react-refresh-wrapper`) even with HMR off.
@@ -53,16 +60,15 @@ export default defineConfig({
   webExt: {
     disabled: true,
   },
-  manifest: () => ({
-    name: "Jamful",
-    description: "See when friends are playing web games.",
-    permissions: ["storage", "identity", "tabs", "alarms"],
-    host_permissions: [
-      "http://127.0.0.1:8787/*",
-      "http://localhost:8787/*",
-      ...allowlistHosts,
-    ],
-  }),
+  manifest: (env) => {
+    const apiBase = loadApiBase(env.mode);
+    return {
+      name: "Jamful",
+      description: "See when friends are playing web games.",
+      permissions: ["storage", "identity", "tabs", "alarms"],
+      host_permissions: [...new Set([apiHostPermissionPattern(apiBase), ...allowlistHosts])],
+    };
+  },
   vite: () => ({
     server: { hmr: false, fs: { allow: [repoRoot] } },
   }),

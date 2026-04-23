@@ -1,14 +1,24 @@
 :root {
+  --jamful-bg: #f5f1e7;
+  --jamful-panel: rgba(255, 252, 244, 0.94);
+  --jamful-panel-strong: #fffaf0;
+  --jamful-ink: #16221c;
+  --jamful-muted: #6d756f;
+  --jamful-soft: #ece3d0;
+  --jamful-line: #d8ceb8;
+  --jamful-accent: #16865d;
+  --jamful-accent-strong: #0f6245;
+  --jamful-danger: #bf3d35;
+  --jamful-shadow: 0 18px 44px rgba(54, 43, 25, 0.16);
   font-family:
+    "Avenir Next",
+    "Segoe UI",
     system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
     sans-serif;
   line-height: 1.45;
   font-weight: 400;
-  color: #0f1419;
-  background: #fff;
+  color: var(--jamful-ink);
+  background: var(--jamful-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -16,173 +26,351 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 360px;
+  background:
+    radial-gradient(circle at top left, rgba(22, 134, 93, 0.18), transparent 34%),
+    linear-gradient(145deg, #f8f1df 0%, #ede6d6 100%);
 }
 
-code {
-  font-size: 0.85em;
-  background: #f4f4f5;
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
+button {
+  font: inherit;
 }
 
 .jamful-popup {
-  padding: 16px;
-  width: 340px;
+  width: 360px;
   box-sizing: border-box;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(245, 241, 231, 0.96)),
+    var(--jamful-bg);
+}
+
+.jamful-popup__masthead {
+  margin-bottom: 14px;
+}
+
+.jamful-popup__eyebrow,
+.jamful-popup__label {
+  margin: 0;
+  color: var(--jamful-muted);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .jamful-popup__title {
-  margin: 0 0 4px;
-  font-size: 1.25rem;
-  font-weight: 600;
-  line-height: 1.2;
+  margin: 3px 0 0;
+  max-width: 280px;
+  font-size: 1.55rem;
+  font-weight: 850;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+}
+
+.jamful-popup__auth,
+.jamful-popup__account,
+.jamful-popup__feed {
+  border: 1px solid var(--jamful-line);
+  border-radius: 20px;
+  background: var(--jamful-panel);
+  box-shadow: var(--jamful-shadow);
+}
+
+.jamful-popup__auth {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
 }
 
 .jamful-popup__muted {
-  margin: 0 0 12px;
-  font-size: 0.8125rem;
-  color: #536471;
-}
-
-.jamful-popup__section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.jamful-popup__label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: #536471;
-}
-
-.jamful-popup__input {
-  margin-top: 4px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
+  margin: 0;
+  color: var(--jamful-muted);
   font-size: 0.875rem;
-  border: 1px solid #cfd9de;
-  border-radius: 8px;
-}
-
-.jamful-popup__input:focus {
-  outline: none;
-  border-color: #1d9bf0;
-  box-shadow: 0 0 0 2px rgba(29, 155, 240, 0.25);
-}
-
-.jamful-popup__hint {
-  margin: 0;
-  font-size: 0.75rem;
-  color: #536471;
-  line-height: 1.4;
-}
-
-.jamful-popup__hint a {
-  color: #1d9bf0;
-  text-decoration: none;
-}
-
-.jamful-popup__hint a:hover {
-  text-decoration: underline;
-}
-
-.jamful-popup__redirect {
-  margin: 0;
-  font-size: 0.6875rem;
-  word-break: break-all;
-  color: #657786;
 }
 
 .jamful-popup__button {
-  border-radius: 9999px;
-  border: 1px solid #cfd9de;
-  padding: 10px 16px;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  font-family: inherit;
-  background: #fff;
-  color: #0f1419;
+  border: 1px solid var(--jamful-line);
+  border-radius: 999px;
+  padding: 9px 13px;
+  color: var(--jamful-ink);
+  background: var(--jamful-panel-strong);
   cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 800;
 }
 
-.jamful-popup__button:hover:not(:disabled) {
-  background: #f7f9f9;
+.jamful-popup__button:hover:not(:disabled),
+.jamful-popup__openGame:hover {
+  border-color: rgba(22, 134, 93, 0.42);
+  transform: translateY(-1px);
 }
 
 .jamful-popup__button:disabled {
-  opacity: 0.6;
   cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .jamful-popup__button--primary {
-  background: #0f1419;
-  border-color: #0f1419;
-  color: #fff;
+  border-color: var(--jamful-accent-strong);
+  color: #fffdf6;
+  background: var(--jamful-accent-strong);
 }
 
-.jamful-popup__button--primary:hover:not(:disabled) {
-  background: #272c30;
+.jamful-popup__button--quiet {
+  padding: 7px 11px;
+  box-shadow: none;
 }
 
-.jamful-popup__success {
-  margin: 0;
+.jamful-popup__account {
+  padding: 14px;
+}
+
+.jamful-popup__accountTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.jamful-popup__signedIn {
+  margin: 3px 0 0;
+  max-width: 190px;
+  overflow: hidden;
+  color: var(--jamful-ink);
   font-size: 0.9375rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.jamful-popup__truncate {
+.jamful-popup__presence {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--jamful-line);
+}
+
+.jamful-popup__presenceBadge {
+  border: 1px solid var(--jamful-line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--jamful-muted);
+  background: var(--jamful-soft);
+  font-size: 0.6875rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.jamful-popup__presenceBadge--active {
+  border-color: rgba(22, 134, 93, 0.28);
+  color: #064e36;
+  background: #cceedd;
+}
+
+.jamful-popup__presenceCopy {
+  margin: 0;
+  color: var(--jamful-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.jamful-popup__feed {
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.jamful-popup__feedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--jamful-line);
+}
+
+.jamful-popup__count {
+  color: var(--jamful-muted);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.jamful-popup__friendList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jamful-popup__friend {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.jamful-popup__friend + .jamful-popup__friend {
+  border-top: 1px solid var(--jamful-line);
+}
+
+.jamful-popup__avatar {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.9), transparent 32%),
+    linear-gradient(135deg, #143a2b, #1c8a62);
+  color: #fffdf6;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.jamful-popup__avatarImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.jamful-popup__avatarFallback {
+  transform: translateY(1px);
+}
+
+.jamful-popup__friendCopy {
+  min-width: 0;
+}
+
+.jamful-popup__friendName,
+.jamful-popup__friendMeta {
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.jamful-popup__friendName {
+  color: var(--jamful-ink);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.jamful-popup__friendMeta {
+  color: var(--jamful-muted);
+  font-size: 0.75rem;
+}
+
+.jamful-popup__openGame {
+  border: 1px solid rgba(22, 134, 93, 0.25);
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: var(--jamful-accent-strong);
+  background: rgba(22, 134, 93, 0.08);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.jamful-popup__empty {
+  padding: 18px 16px 20px;
+  color: var(--jamful-muted);
+  text-align: center;
+}
+
+.jamful-popup__empty p {
+  margin: 0;
+  color: var(--jamful-ink);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.jamful-popup__empty span {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
 .jamful-popup__error {
-  margin: 12px 0 0;
-  font-size: 0.8125rem;
-  color: #f4212e;
+  margin: 12px 14px 14px;
+  color: var(--jamful-danger);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.jamful-popup__auth .jamful-popup__error {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .jamful-popup__button,
+  .jamful-popup__openGame {
+    transition:
+      border-color 140ms ease,
+      transform 140ms ease,
+      background 140ms ease;
+  }
+
+  .jamful-popup__account,
+  .jamful-popup__feed,
+  .jamful-popup__auth {
+    animation: jamful-enter 180ms ease-out both;
+  }
+}
+
+@keyframes jamful-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    color: #e7e9ea;
-    background: #000;
+    --jamful-bg: #0e1511;
+    --jamful-panel: rgba(19, 29, 24, 0.96);
+    --jamful-panel-strong: #17261f;
+    --jamful-ink: #eff8ee;
+    --jamful-muted: #9aac9d;
+    --jamful-soft: #1c2a23;
+    --jamful-line: #2d4035;
+    --jamful-accent: #70d9a7;
+    --jamful-accent-strong: #7ce2b0;
+    --jamful-danger: #ff8a80;
+    --jamful-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+    color: var(--jamful-ink);
+    background: var(--jamful-bg);
   }
 
-  .jamful-popup__input {
-    background: #16181c;
-    border-color: #536471;
-    color: inherit;
-  }
-
-  code {
-    background: #2f3336;
-    color: #e7e9ea;
-  }
-
-  .jamful-popup__button {
-    background: #16181c;
-    border-color: #536471;
-    color: #e7e9ea;
-  }
-
-  .jamful-popup__button:hover:not(:disabled) {
-    background: #272c30;
+  body {
+    background:
+      radial-gradient(circle at top left, rgba(124, 226, 176, 0.14), transparent 34%),
+      linear-gradient(145deg, #101811 0%, #0b100e 100%);
   }
 
   .jamful-popup__button--primary {
-    background: #e7e9ea;
-    border-color: #e7e9ea;
-    color: #0f1419;
+    color: #082217;
+    background: var(--jamful-accent-strong);
   }
 
-  .jamful-popup__button--primary:hover:not(:disabled) {
-    background: #d7dbdc;
+  .jamful-popup__presenceBadge--active {
+    color: #052115;
+    background: #83e6b1;
   }
 
-  .jamful-popup__hint a {
-    color: #1d9bf0;
+  .jamful-popup__openGame {
+    color: #a4f0c5;
+    background: rgba(124, 226, 176, 0.12);
   }
 }

@@ -1,50 +1,247 @@
-import { useCallback, useEffect, useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useState } from "react";
+import type { FeedEntry } from "@jamful/shared";
 import { browser } from "wxt/browser";
 import { JamfulApiClient } from "@jamful/extension-api";
+import {
+  POPUP_FEED_CACHE_STORAGE_KEY,
+  REFRESH_FEED_MESSAGE_TYPE,
+  coercePopupFeedCache,
+  emptyPopupFeedCache,
+} from "../../lib/feed-cache";
+import {
+  getConfiguredApiBaseError,
+  getConfiguredApiBaseOrNull,
+} from "../../lib/runtime-config";
+import {
+  POPUP_SELF_PRESENCE_EXPIRY_MS,
+  POPUP_SELF_PRESENCE_STORAGE_KEY,
+  coercePopupSelfPresence,
+  inactivePopupSelfPresence,
+  isPopupSelfPresenceFresh,
+  type PopupSelfPresence,
+} from "../../lib/self-presence";
 import { createPkcePair } from "./pkce";
 
-const DEFAULT_API = "http://127.0.0.1:8787";
+const FEED_REFRESH_MS = 60_000;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function initialsForName(name: string): string {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+  return initials || "?";
+}
+
+function FriendAvatar({ name, avatarUrl }: { name: string; avatarUrl: string }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = avatarUrl.length > 0 && !imageFailed;
+
+  return (
+    <span className="jamful-popup__avatar" aria-hidden="true">
+      {showImage ? (
+        <img
+          className="jamful-popup__avatarImage"
+          src={avatarUrl}
+          alt=""
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <span className="jamful-popup__avatarFallback">{initialsForName(name)}</span>
+      )}
+    </span>
+  );
+}
+
+function FriendRow({ entry }: { entry: FeedEntry }) {
+  const gameName = entry.game.name || "Unknown game";
+
+  return (
+    <li className="jamful-popup__friend">
+      <FriendAvatar name={entry.friend.name} avatarUrl={entry.friend.avatar_url} />
+      <div className="jamful-popup__friendCopy">
+        <p className="jamful-popup__friendName">{entry.friend.name}</p>
+        <p className="jamful-popup__friendMeta">Playing {gameName}</p>
+      </div>
+      <button
+        type="button"
+        className="jamful-popup__openGame"
+        onClick={() => void browser.tabs.create({ url: entry.game.url, active: true })}
+      >
+        Open
+      </button>
+    </li>
+  );
+}
+
+function PresenceSummary({ selfPresence }: { selfPresence: PopupSelfPresence }) {
+  const playingNow = isPopupSelfPresenceFresh(selfPresence);
+
+  return (
+    <div className="jamful-popup__presence">
+      <span
+        className={
+          playingNow
+            ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--active"
+            : "jamful-popup__presenceBadge"
+        }
+      >
+        {playingNow ? "Playing now" : "Not playing right now"}
+      </span>
+      <p className="jamful-popup__presenceCopy">
+        {playingNow && selfPresence.gameName
+          ? `You're currently in ${selfPresence.gameName}.`
+          : "Open a supported game tab and Jamful will share your presence after a short moment."}
+      </p>
+    </div>
+  );
+}
 
 export default function App() {
-  const [apiBase, setApiBase] = useState(DEFAULT_API);
-  const [apiInput, setApiInput] = useState(DEFAULT_API);
   const [token, setToken] = useState<string | null>(null);
   const [xUsername, setXUsername] = useState<string | null>(null);
-  const [redirectUrl, setRedirectUrl] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [selfPresence, setSelfPresence] = useState<PopupSelfPresence>(
+    inactivePopupSelfPresence(),
+  );
+  const [feed, setFeed] = useState<FeedEntry[]>([]);
+  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
 
-  useEffect(() => {
-    setRedirectUrl(browser.identity.getRedirectURL());
-    void (async () => {
-      const { apiBaseUrl, accessToken, xUsername: storedUser } =
-        await browser.storage.local.get([
-          "apiBaseUrl",
-          "accessToken",
-          "xUsername",
-        ]);
-      const base =
-        typeof apiBaseUrl === "string" && apiBaseUrl.length > 0
-          ? apiBaseUrl
-          : DEFAULT_API;
-      setApiBase(base);
-      setApiInput(base);
-      setToken(typeof accessToken === "string" ? accessToken : null);
-      setXUsername(typeof storedUser === "string" ? storedUser : null);
-    })();
-  }, []);
-
+  const apiBase = getConfiguredApiBaseOrNull();
+  const configError = getConfiguredApiBaseError();
   const loggedIn = !!token;
 
-  const handleSignIn = useCallback(async () => {
-    const api = apiInput.trim() || DEFAULT_API;
-    await browser.storage.local.set({ apiBaseUrl: api });
-    setApiBase(api);
-    setError(null);
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const stored = await browser.storage.local.get([
+        "accessToken",
+        "xUsername",
+        POPUP_FEED_CACHE_STORAGE_KEY,
+        POPUP_SELF_PRESENCE_STORAGE_KEY,
+      ]);
+      if (cancelled) return;
+      setToken(typeof stored.accessToken === "string" ? stored.accessToken : null);
+      setXUsername(typeof stored.xUsername === "string" ? stored.xUsername : null);
+      const feedCache = coercePopupFeedCache(stored[POPUP_FEED_CACHE_STORAGE_KEY]);
+      setFeed(feedCache.entries);
+      setFeedError(feedCache.error);
+      setSelfPresence(
+        coercePopupSelfPresence(stored[POPUP_SELF_PRESENCE_STORAGE_KEY]),
+      );
+    })();
+
+    function handleStorageChange(
+      changes: Record<string, { newValue?: unknown }>,
+      area: string,
+    ): void {
+      if (area !== "local") return;
+      if (changes.accessToken) {
+        setToken(
+          typeof changes.accessToken.newValue === "string"
+            ? changes.accessToken.newValue
+            : null,
+        );
+      }
+      if (changes.xUsername) {
+        setXUsername(
+          typeof changes.xUsername.newValue === "string"
+            ? changes.xUsername.newValue
+            : null,
+        );
+      }
+      if (changes[POPUP_FEED_CACHE_STORAGE_KEY]) {
+        const feedCache = coercePopupFeedCache(
+          changes[POPUP_FEED_CACHE_STORAGE_KEY].newValue,
+        );
+        setFeed(feedCache.entries);
+        setFeedError(feedCache.error);
+        setFeedLoading(false);
+      }
+      if (changes[POPUP_SELF_PRESENCE_STORAGE_KEY]) {
+        setSelfPresence(
+          coercePopupSelfPresence(
+            changes[POPUP_SELF_PRESENCE_STORAGE_KEY].newValue,
+          ),
+        );
+      }
+    }
+
+    browser.storage.onChanged.addListener(handleStorageChange);
+    return () => {
+      cancelled = true;
+      browser.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selfPresence.active || selfPresence.lastHeartbeatAt == null) return;
+    const expiresAt = selfPresence.lastHeartbeatAt + POPUP_SELF_PRESENCE_EXPIRY_MS;
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) return;
+
+    const timeout = window.setTimeout(() => {
+      setSelfPresence((current) => ({ ...current }));
+    }, remaining + 50);
+
+    return () => window.clearTimeout(timeout);
+  }, [selfPresence]);
+
+  const refreshFeed = useEffectEvent(async () => {
+    if (!token) return;
+    if (!apiBase) {
+      startTransition(() => {
+        setFeedError(configError ?? "The Jamful API URL is not configured.");
+      });
+      return;
+    }
+
+    if (feed.length === 0) setFeedLoading(true);
+
+    try {
+      await browser.runtime.sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE });
+    } catch (error) {
+      startTransition(() => {
+        setFeedError(errorMessage(error));
+      });
+    } finally {
+      setFeedLoading(false);
+    }
+  });
+
+  useEffect(() => {
+    if (!loggedIn) {
+      setFeed([]);
+      setFeedError(null);
+      setFeedLoading(false);
+      return;
+    }
+
+    void refreshFeed();
+    const interval = window.setInterval(() => void refreshFeed(), FEED_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [loggedIn, refreshFeed]);
+
+  async function handleSignIn(): Promise<void> {
+    if (!apiBase) {
+      setAuthError(configError ?? "The Jamful API URL is not configured.");
+      return;
+    }
+
+    setAuthError(null);
     setLoginBusy(true);
-    const c = new JamfulApiClient(api, () => null);
+    const c = new JamfulApiClient(apiBase, () => null);
     const redirect_uri = browser.identity.getRedirectURL();
     const state = crypto.randomUUID();
+
     try {
       const { verifier, challenge } = await createPkcePair();
       const { authorization_url } = await c.getXAuthorizationUrl({
@@ -57,23 +254,23 @@ export default function App() {
         interactive: true,
       });
       if (!responseUrl) {
-        setError("Sign-in was cancelled.");
+        setAuthError("Sign-in was cancelled.");
         return;
       }
       const r = new URL(responseUrl);
       const err = r.searchParams.get("error");
       const desc = r.searchParams.get("error_description");
       if (err) {
-        setError(`${err}${desc ? `: ${desc}` : ""}`);
+        setAuthError(`${err}${desc ? `: ${desc}` : ""}`);
         return;
       }
       if (r.searchParams.get("state") !== state) {
-        setError("OAuth state mismatch; try again.");
+        setAuthError("OAuth state mismatch; try again.");
         return;
       }
       const code = r.searchParams.get("code");
       if (!code) {
-        setError("No authorization code returned.");
+        setAuthError("No authorization code returned.");
         return;
       }
       const tokenRes = await c.exchangeXToken({
@@ -87,74 +284,104 @@ export default function App() {
       });
       setToken(tokenRes.access_token);
       setXUsername(tokenRes.x_username);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setFeed([]);
+      setFeedError(null);
+    } catch (error) {
+      setAuthError(errorMessage(error));
     } finally {
       setLoginBusy(false);
     }
-  }, [apiInput]);
+  }
 
-  const handleSignOut = useCallback(async () => {
+  async function handleSignOut(): Promise<void> {
     await browser.storage.local.remove(["accessToken", "xUsername"]);
     setToken(null);
     setXUsername(null);
-    setError(null);
-  }, []);
+    setAuthError(null);
+    setFeed([]);
+    setFeedError(null);
+    setFeedLoading(false);
+    await browser.storage.local.set({
+      [POPUP_FEED_CACHE_STORAGE_KEY]: emptyPopupFeedCache(),
+    });
+    setSelfPresence(inactivePopupSelfPresence());
+  }
 
   return (
-    <div className="jamful-popup">
-      <h1 className="jamful-popup__title">Jamful</h1>
-      <p className="jamful-popup__muted">Sign in with your X account.</p>
+    <main className="jamful-popup">
+      <header className="jamful-popup__masthead">
+        <p className="jamful-popup__eyebrow">Jamful</p>
+        <h1 className="jamful-popup__title">
+          {loggedIn ? "Friends playing now" : "See who's playing"}
+        </h1>
+      </header>
 
-      {!loggedIn && (
-        <div className="jamful-popup__section">
-          <label className="jamful-popup__label">
-            API base URL
-            <input
-              className="jamful-popup__input"
-              type="text"
-              value={apiInput}
-              onChange={(e) => setApiInput(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
-          <p className="jamful-popup__hint">
-            Use your Jamful worker URL (local dev defaults to{" "}
-            <code>{DEFAULT_API}</code>). Register this redirect in the X
-            developer portal:
+      {!loggedIn ? (
+        <section className="jamful-popup__auth">
+          <p className="jamful-popup__muted">
+            Sign in with X to see friends who are active in supported web games.
           </p>
-          <p className="jamful-popup__redirect">{redirectUrl}</p>
           <button
             type="button"
             className="jamful-popup__button jamful-popup__button--primary"
             onClick={() => void handleSignIn()}
-            disabled={loginBusy}
+            disabled={loginBusy || !apiBase}
           >
-            {loginBusy ? "Signing in…" : "Sign in with X"}
+            {loginBusy ? "Signing in..." : "Sign in with X"}
           </button>
-        </div>
-      )}
+          {(authError || configError) && (
+            <p className="jamful-popup__error">{authError ?? configError}</p>
+          )}
+        </section>
+      ) : (
+        <>
+          <section className="jamful-popup__account" aria-label="Account status">
+            <div className="jamful-popup__accountTop">
+              <div>
+                <p className="jamful-popup__label">Authentication</p>
+                <p className="jamful-popup__signedIn">
+                  Signed in{xUsername ? ` as @${xUsername}` : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="jamful-popup__button jamful-popup__button--quiet"
+                onClick={() => void handleSignOut()}
+              >
+                Sign out
+              </button>
+            </div>
+            <PresenceSummary selfPresence={selfPresence} />
+          </section>
 
-      {loggedIn && (
-        <div className="jamful-popup__section">
-          <p className="jamful-popup__success">
-            Signed in{xUsername ? ` as @${xUsername}` : ""}.
-          </p>
-          <p className="jamful-popup__muted jamful-popup__truncate" title={apiBase}>
-            API: {apiBase}
-          </p>
-          <button
-            type="button"
-            className="jamful-popup__button"
-            onClick={() => void handleSignOut()}
-          >
-            Sign out
-          </button>
-        </div>
-      )}
+          <section className="jamful-popup__feed" aria-label="Friends playing now">
+            <div className="jamful-popup__feedHeader">
+              <p className="jamful-popup__label">Friends</p>
+              <span className="jamful-popup__count">
+                {feed.length === 1 ? "1 active" : `${feed.length} active`}
+              </span>
+            </div>
 
-      {error && <p className="jamful-popup__error">{error}</p>}
-    </div>
+            {feed.length > 0 ? (
+              <ul className="jamful-popup__friendList">
+                {feed.map((entry) => (
+                  <FriendRow
+                    key={`${entry.session_id}:${entry.friend.name}:${entry.game.url}`}
+                    entry={entry}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <div className="jamful-popup__empty">
+                <p>{feedLoading ? "Loading friends..." : "No friends are playing right now."}</p>
+                <span>Open the popup later or start a game so friends can jump in.</span>
+              </div>
+            )}
+
+            {feedError && <p className="jamful-popup__error">{feedError}</p>}
+          </section>
+        </>
+      )}
+    </main>
   );
 }
