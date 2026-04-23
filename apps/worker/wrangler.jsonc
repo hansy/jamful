@@ -37,11 +37,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["UserPresenceDO", "UserInboxDO"],
-    },
-    {
-      "tag": "v2",
-      "deleted_classes": ["UserInboxDO"],
+      "new_sqlite_classes": ["UserPresenceDO"],
     },
   ],
 }
