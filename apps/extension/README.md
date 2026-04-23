@@ -62,8 +62,20 @@ WXT_API_BASE_URL=https://your-worker.example.com
 
 Restart the WXT dev/build process after changing this value, then reload the unpacked extension in Chrome. The configured API origin is also added to `host_permissions` during manifest generation.
 
-## Authenticated popup data flow
+## Background feed and toolbar flow
 
-When signed in, the popup reads friend activity from a background-owned cache in extension storage. The background service worker is the only code path that calls `GET /feed`; it updates the toolbar badge count and writes the full feed to `popupFeedCache`.
+When signed in, the popup reads friend activity from a background-owned cache in extension storage. The background service worker is the only code path that calls `GET /feed`; it writes the full feed to `popupFeedCache`, stores the current online-friends count, and redraws the toolbar icon/title from that count.
 
-The popup requests a refresh from the background on open and every 60 seconds while mounted, but the background dedupes in-flight refreshes and skips refreshes while the cache is still fresh. This avoids separate `/feed` polling loops for the badge and popup UI.
+The background refreshes this cache on startup, after auth changes, and on a 60-second `alarms` timer. The popup also requests a refresh on open and every 60 seconds while mounted, but the background dedupes in-flight refreshes and skips work while the cache is still fresh. This keeps one shared `/feed` refresh path for both the popup UI and the toolbar state.
+
+Jamful does not currently use the browser notifications API or Chrome badge text. The only user-facing "notification" surface is the toolbar icon/title reflecting the latest online-friend count.
+
+## Extension permissions
+
+Current manifest permissions and why they exist:
+
+- `storage`: stores auth tokens, popup feed cache, and self-presence state.
+- `identity`: used for the X OAuth PKCE redirect flow via `browser.identity`.
+- `tabs`: reads the active tab URL and listens for tab activation/update changes so presence can be detected from the current page.
+- `alarms`: wakes the background service worker for the 60-second feed refresh loop and the 60-second self-presence heartbeat loop.
+- `host_permissions` for the API origin only: allows the extension to call the Jamful worker API with `fetch`.

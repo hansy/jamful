@@ -138,51 +138,36 @@ Response:
 
 ---
 
-### 3.7 Notifications (Polling-Based)
+### 3.7 Toolbar Updates (Feed-Based)
 
-#### Polling
+#### Toolbar Status Rule
 
-- Extension polls every 60 seconds:
+Update toolbar state when:
 
-```
-GET /notifications?cursor=...
-```
-
-#### Notification Trigger Rule
-
-Notify when:
-
-- A friend starts a new session
-- `(friend_id, session_id)` has not been notified before
-
-#### Notification Types
-
-- Friend started playing a game
-
-#### Example
-
-- "Alice is playing Orbit Duel"
+- the background refreshes `GET /feed`
+- the user starts or stops broadcasting presence
 
 #### Client Behavior
 
-- Show browser notification
-- Increment badge count
+- redraw the toolbar icon with the latest number of friends online
+- update the action title to reflect online count and broadcasting state
+- do not show browser notifications
+- do not use Chrome badge text
 
 ---
 
-### 3.8 Notification Data Model
+### 3.8 Background-Owned Feed Cache
+
+The extension keeps the latest `GET /feed` response in extension storage so the
+popup and toolbar use the same source of truth.
 
 ```
-Notification {
-  id: string
-  recipient_user_id: string
-  friend_user_id: string
-  session_id: string
-  created_at: timestamp
+PopupFeedCache {
+  entries: FeedEntry[]
+  fetchedAt: number | null
+  error: string | null
 }
 ```
-
-Server ensures no duplicate notifications per `(recipient_user_id, session_id)`.
 
 ---
 
@@ -192,9 +177,9 @@ Server ensures no duplicate notifications per `(recipient_user_id, session_id)`.
 
 - Tracks tab changes
 - Runs heartbeat loop
-- Polls notifications
-- Displays notifications
-- Updates badge count
+- Polls `/feed`
+- Updates toolbar icon/title
+- Owns popup feed cache
 
 ### Popup UI
 
@@ -229,32 +214,32 @@ Playing → Idle
 
 ---
 
-## 6. Polling Logic (Notifications)
+## 6. Polling Logic (Feed)
 
-Client stores:
+Background stores:
 
-- `cursor`
+- `popupFeedCache`
+- last successful online-friends count
 
 Flow:
 
-1. Poll `/notifications`
-2. Receive new items
-3. Show notifications
-4. Update cursor
+1. Background polls `/feed`
+2. Store the result in extension storage
+3. Redraw toolbar icon/title from the current count
+4. Popup reads from the shared cache
 
 ---
 
 ## 7. Permissions Model
 
-- No `<all_urls>` initially
-- Use optional host permissions
-
-Flow for unknown domain:
-
-1. User clicks extension
-2. Prompt: "Enable this site"
-3. Request host permission
-4. Future visits auto-detected
+- No `<all_urls>`
+- No optional host-permission request flow
+- Request only:
+  - `storage`
+  - `identity`
+  - `tabs`
+  - `alarms`
+  - `host_permissions` for the API origin
 
 ---
 
@@ -277,7 +262,8 @@ Flow for unknown domain:
   - Auth (X)
   - Game registry endpoint
   - Presence endpoints (heartbeat)
-  - Feed + notifications endpoints
+  - Feed endpoint
+  - Legacy notifications endpoint (not consumed by the current extension UI)
   - Routes requests to Durable Objects
 
 - **Durable Objects (SQLite-backed)**
@@ -291,17 +277,16 @@ Flow for unknown domain:
     - Handles heartbeat → start/update session
     - Emits `session_started` events when a new session begins
 
-  - `UserInboxDO(recipientUserId)`
-    - Stores per-recipient notifications (the user who should see the alert)
-    - Maintains unread count + cursor
-    - Returns notifications since cursor on poll
+  - `UserInboxDO(recipientUserId)` (legacy)
+    - Stores per-recipient notifications
+    - Not used by the current extension UI
 
 - **Queues (fanout)**
   - Topic: `presence-events`
   - Producer: `UserPresenceDO` on new session
   - Consumer:
     - Resolves followers of `friend_user_id`
-    - Enqueues notifications into each `UserInboxDO(recipientUserId)`
+    - Materializes feed/notification state for downstream reads
 
 - **KV (global cache)**
   - Game registry (id, name, url, icon_url) — populated from repo `data/seedGames.json` via `scripts/build-registry.ts` and `wrangler kv` (no runtime fetch)
@@ -356,7 +341,7 @@ Notification {
 ### Follow Graph (v0)
 
 - Materialized per followed user (e.g., stored in KV):
-  - `followers:{user_id} -> Set<recipient_user_id>` (users who follow `user_id` and should receive notifications when they play)
+  - `followers:{user_id} -> Set<recipient_user_id>` (users who follow `user_id` and should see that activity reflected in feed/toolbars)
 
 - Built from X API sync on sign-in (following list)
 
@@ -388,12 +373,12 @@ Notification {
 ### Notifications
 
 - `GET /notifications?cursor=...`
-  - Worker routes to `UserInboxDO(recipientUserId)`
-  - Returns new notifications + next cursor
+  - Legacy endpoint; current extension UI does not poll it
+  - Worker returns notification rows for possible future use
 
 ---
 
-## 12. Presence & Notification Flow
+## 12. Presence & Feed Flow
 
 1. Extension detects game (URL match + active tab + dwell)
 2. Extension sends heartbeat every 60s
@@ -402,13 +387,10 @@ Notification {
    - Creates/updates session
    - On new session → publishes to Queue
 
-5. Queue consumer:
-   - Fetches followers of `userId`
-   - Enqueues notifications to each `UserInboxDO(recipientUserId)`
-
-6. Extension polls `/notifications`
-7. Inbox DO returns unseen notifications
-8. Extension shows notification + updates badge
+5. Background polls `/feed`
+6. Background stores the latest feed in extension storage
+7. Background updates the toolbar icon/title from `feed.length`
+8. Popup reads the cached feed from storage
 
 ---
 
@@ -418,29 +400,28 @@ Notification {
 
 - Detects tab changes + active tab
 - Runs heartbeat loop (60s)
-- Polls `/notifications` (60s)
-- Displays notifications
-- Updates badge count
+- Polls `/feed` (60s)
+- Updates toolbar icon/title
+- Owns popup feed cache
 
 ### Popup UI
 
-- Displays feed (`GET /feed`)
+- Reads cached feed from background-owned storage
+- Requests a background refresh on open / every 60s while mounted
 - Shows active friends and quick links to games
-- Shows “Enable this site” for unknown domains
 
 ---
 
 ## 14. Permissions Model
 
-- No `<all_urls>` initially
-- Use `optional_host_permissions: ["https://*/*"]`
-
-Flow for unknown domain:
-
-1. User clicks extension
-2. Prompt: “Enable this site”
-3. Request host permission for current origin
-4. Future visits auto-detected
+- No `<all_urls>`
+- No optional host permissions
+- Use only:
+  - `storage`
+  - `identity`
+  - `tabs`
+  - `alarms`
+  - `host_permissions` for the API origin
 
 ---
 
@@ -542,7 +523,7 @@ repo/
 
 - Keep all core logic in `packages/extension-core`
 - Browser apps should be thin shells
-- Abstract browser APIs (storage, notifications, permissions)
+- Abstract browser APIs (storage, identity, tabs, alarms, permissions)
 - Avoid browser-specific logic leaking into core packages
 
 ---
@@ -556,9 +537,8 @@ repo/
 - URL detection
 - Heartbeat (60s)
 - `UserPresenceDO`
-- Queue fanout
-- `UserInboxDO`
-- Notification polling
+- Background feed polling
+- Toolbar online-count updates
 - Popup feed UI
 
 ### Not Included
@@ -575,7 +555,7 @@ repo/
 - **Durable Objects for coordination** (presence + inbox)
 - **Queues for async fanout**
 - **KV for registry**
-- **Polling (60s) for notifications**
+- **Polling (60s) for feed refresh**
 - **Session-based dedupe using `session_id`**
 
 ---
@@ -587,9 +567,8 @@ System model:
 - Extension detects game play
 - Sends heartbeat to Worker
 - `UserPresenceDO` maintains session state
-- New sessions are fanned out via Queue
-- `UserInboxDO` stores per-recipient notifications
-- Extension polls and displays updates
+- Background polls `/feed`
+- Background updates the toolbar icon/title and popup cache
 
 Goal:
 
