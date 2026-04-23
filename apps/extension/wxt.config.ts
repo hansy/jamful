@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 import { loadEnv } from "vite";
 import { apiHostPermissionPattern, normalizeApiBase } from "./lib/api-base";
@@ -70,6 +71,7 @@ export default defineConfig({
     };
   },
   vite: () => ({
+    plugins: [tailwindcss()],
     server: { hmr: false, fs: { allow: [repoRoot] } },
   }),
 });

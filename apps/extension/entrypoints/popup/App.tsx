@@ -22,6 +22,23 @@ import {
 } from "../../lib/self-presence";
 import { createPkcePair } from "./pkce";
 
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "../../components/ui/avatar";
+import { Button } from "../../components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
+import { ScrollArea } from "../../components/ui/scroll-area";
+import { ChevronDown, Eye, EyeOff, Gamepad2, LogOut, Play } from "lucide-react";
+import { cn } from "../../lib/utils";
+
 const FEED_REFRESH_MS = 60_000;
 
 function errorMessage(error: unknown): string {
@@ -71,82 +88,69 @@ function graphStatusCopy(status: GraphSyncStatus): string {
 }
 
 function initialsForName(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2);
+  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
   const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
   return initials || "?";
 }
 
-function FriendAvatar({ name, avatarUrl }: { name: string; avatarUrl: string }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const showImage = avatarUrl.length > 0 && !imageFailed;
-
-  return (
-    <span className="jamful-popup__avatar" aria-hidden="true">
-      {showImage ? (
-        <img
-          className="jamful-popup__avatarImage"
-          src={avatarUrl}
-          alt=""
-          onError={() => setImageFailed(true)}
-        />
-      ) : (
-        <span className="jamful-popup__avatarFallback">{initialsForName(name)}</span>
-      )}
-    </span>
-  );
+function avatarUrlFromAccessToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const parsed = JSON.parse(atob(padded)) as { av?: unknown };
+    return typeof parsed.av === "string" && parsed.av.length > 0
+      ? parsed.av
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function FriendRow({ entry }: { entry: FeedEntry }) {
   const gameName = entry.game.name || "Unknown game";
 
   return (
-    <li className="jamful-popup__friend">
-      <FriendAvatar name={entry.friend.name} avatarUrl={entry.friend.avatar_url} />
-      <div className="jamful-popup__friendCopy">
-        <p className="jamful-popup__friendName">{entry.friend.name}</p>
-        <p className="jamful-popup__friendMeta">Playing {gameName}</p>
+    <div className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50">
+      <div className="relative shrink-0">
+        <Avatar className="h-7 w-7">
+          <AvatarImage src={entry.friend.avatar_url} alt={entry.friend.name} />
+          <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
+            {initialsForName(entry.friend.name)}
+          </AvatarFallback>
+        </Avatar>
+        {entry.game.icon_url && (
+          <img
+            src={entry.game.icon_url}
+            alt={gameName}
+            className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-sm border border-background bg-background object-cover"
+          />
+        )}
       </div>
-      <button
-        type="button"
-        className="jamful-popup__openGame"
-        onClick={() => void browser.tabs.create({ url: entry.game.url, active: true })}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium leading-none">
+          {entry.friend.name}
+        </p>
+        <p className="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-muted-foreground">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
+          <span className="truncate">
+            Playing <span className="font-medium text-foreground">{gameName}</span>
+          </span>
+        </p>
+      </div>
+      <Button
+        variant="secondary"
+        size="icon"
+        className="h-6 w-6 shrink-0 rounded-full opacity-0 transition-opacity group-hover:opacity-100 focus-visible:ring-0 focus-visible:ring-offset-0"
+        onClick={() =>
+          void browser.tabs.create({ url: entry.game.url, active: true })
+        }
+        title={`Join ${entry.friend.name} in ${gameName}`}
       >
-        Open
-      </button>
-    </li>
-  );
-}
-
-function PresenceSummary({
-  selfPresence,
-  presenceInvisible,
-}: {
-  selfPresence: PopupSelfPresence;
-  presenceInvisible: boolean;
-}) {
-  const playingNow = !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
-  const badgeClassName = playingNow
-    ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--active"
-    : presenceInvisible
-      ? "jamful-popup__presenceBadge jamful-popup__presenceBadge--invisible"
-      : "jamful-popup__presenceBadge";
-
-  return (
-    <div className="jamful-popup__presence">
-      <span className={badgeClassName}>
-        {presenceInvisible ? "Invisible mode" : playingNow ? "Playing now" : "Not playing right now"}
-      </span>
-      <p className="jamful-popup__presenceCopy">
-        {presenceInvisible
-          ? "Your game activity is hidden until you turn visibility back on."
-          : playingNow && selfPresence.gameName
-            ? `You're currently in ${selfPresence.gameName}.`
-            : "Open a supported game tab and Jamful will share your presence after a short moment."}
-      </p>
+        <Play className="ml-0.5 h-3 w-3" />
+      </Button>
     </div>
   );
 }
@@ -154,12 +158,13 @@ function PresenceSummary({
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [xUsername, setXUsername] = useState<string | null>(null);
+  const [xAvatarUrl, setXAvatarUrl] = useState<string | null>(null);
   const [presenceInvisible, setPresenceInvisible] = useState(false);
   const [selfPresence, setSelfPresence] = useState<PopupSelfPresence>(
     inactivePopupSelfPresence(),
   );
   const [feed, setFeed] = useState<FeedEntry[]>([]);
-  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedFetchedAt, setFeedFetchedAt] = useState<number | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
@@ -180,16 +185,29 @@ export default function App() {
       const stored = await browser.storage.local.get([
         "accessToken",
         "xUsername",
+        "xAvatarUrl",
         "presenceInvisible",
         POPUP_FEED_CACHE_STORAGE_KEY,
         POPUP_SELF_PRESENCE_STORAGE_KEY,
       ]);
       if (cancelled) return;
-      setToken(typeof stored.accessToken === "string" ? stored.accessToken : null);
-      setXUsername(typeof stored.xUsername === "string" ? stored.xUsername : null);
+      const storedToken =
+        typeof stored.accessToken === "string" ? stored.accessToken : null;
+      setToken(storedToken);
+      setXUsername(
+        typeof stored.xUsername === "string" ? stored.xUsername : null,
+      );
+      setXAvatarUrl(
+        typeof stored.xAvatarUrl === "string" && stored.xAvatarUrl.length > 0
+          ? stored.xAvatarUrl
+          : avatarUrlFromAccessToken(storedToken),
+      );
       setPresenceInvisible(stored.presenceInvisible === true);
-      const feedCache = coercePopupFeedCache(stored[POPUP_FEED_CACHE_STORAGE_KEY]);
+      const feedCache = coercePopupFeedCache(
+        stored[POPUP_FEED_CACHE_STORAGE_KEY],
+      );
       setFeed(feedCache.entries);
+      setFeedFetchedAt(feedCache.fetchedAt);
       setFeedError(feedCache.error);
       setSelfPresence(
         coercePopupSelfPresence(stored[POPUP_SELF_PRESENCE_STORAGE_KEY]),
@@ -202,16 +220,27 @@ export default function App() {
     ): void {
       if (area !== "local") return;
       if (changes.accessToken) {
-        setToken(
+        const nextToken =
           typeof changes.accessToken.newValue === "string"
             ? changes.accessToken.newValue
-            : null,
-        );
+            : null;
+        setToken(nextToken);
+        if (!changes.xAvatarUrl) {
+          setXAvatarUrl(avatarUrlFromAccessToken(nextToken));
+        }
       }
       if (changes.xUsername) {
         setXUsername(
           typeof changes.xUsername.newValue === "string"
             ? changes.xUsername.newValue
+            : null,
+        );
+      }
+      if (changes.xAvatarUrl) {
+        setXAvatarUrl(
+          typeof changes.xAvatarUrl.newValue === "string" &&
+            changes.xAvatarUrl.newValue.length > 0
+            ? changes.xAvatarUrl.newValue
             : null,
         );
       }
@@ -223,8 +252,8 @@ export default function App() {
           changes[POPUP_FEED_CACHE_STORAGE_KEY].newValue,
         );
         setFeed(feedCache.entries);
+        setFeedFetchedAt(feedCache.fetchedAt);
         setFeedError(feedCache.error);
-        setFeedLoading(false);
       }
       if (changes[POPUP_SELF_PRESENCE_STORAGE_KEY]) {
         setSelfPresence(
@@ -244,7 +273,8 @@ export default function App() {
 
   useEffect(() => {
     if (!selfPresence.active || selfPresence.lastHeartbeatAt == null) return;
-    const expiresAt = selfPresence.lastHeartbeatAt + POPUP_SELF_PRESENCE_EXPIRY_MS;
+    const expiresAt =
+      selfPresence.lastHeartbeatAt + POPUP_SELF_PRESENCE_EXPIRY_MS;
     const remaining = expiresAt - Date.now();
     if (remaining <= 0) return;
 
@@ -255,7 +285,7 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [selfPresence]);
 
-  const refreshFeed = useEffectEvent(async () => {
+  const refreshFeed = useEffectEvent(() => {
     if (!token) return;
     if (!apiBase) {
       startTransition(() => {
@@ -264,17 +294,13 @@ export default function App() {
       return;
     }
 
-    if (feed.length === 0) setFeedLoading(true);
-
-    try {
-      await browser.runtime.sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE });
-    } catch (error) {
-      startTransition(() => {
-        setFeedError(errorMessage(error));
+    void browser.runtime
+      .sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE })
+      .catch((error) => {
+        startTransition(() => {
+          setFeedError(errorMessage(error));
+        });
       });
-    } finally {
-      setFeedLoading(false);
-    }
   });
 
   const refreshGraphStatus = useEffectEvent(async () => {
@@ -304,13 +330,16 @@ export default function App() {
   useEffect(() => {
     if (!loggedIn) {
       setFeed([]);
+      setFeedFetchedAt(null);
       setFeedError(null);
-      setFeedLoading(false);
       return;
     }
 
     void refreshFeed();
-    const interval = window.setInterval(() => void refreshFeed(), FEED_REFRESH_MS);
+    const interval = window.setInterval(
+      () => void refreshFeed(),
+      FEED_REFRESH_MS,
+    );
     return () => window.clearInterval(interval);
   }, [loggedIn, refreshFeed]);
 
@@ -381,12 +410,17 @@ export default function App() {
         code_verifier: verifier,
         redirect_uri,
       });
+      const nextUsername = tokenRes.user.x_username || tokenRes.x_username;
+      const nextAvatarUrl =
+        tokenRes.avatar_url || tokenRes.user.avatar_url || avatarUrlFromAccessToken(tokenRes.access_token);
       await browser.storage.local.set({
         accessToken: tokenRes.access_token,
-        xUsername: tokenRes.user.x_username,
+        xUsername: nextUsername,
+        xAvatarUrl: nextAvatarUrl,
       });
       setToken(tokenRes.access_token);
-      setXUsername(tokenRes.user.x_username);
+      setXUsername(nextUsername);
+      setXAvatarUrl(nextAvatarUrl);
       setGraphStatus({
         status: tokenRes.graph_sync.status,
         last_synced_at: tokenRes.graph_sync.last_synced_at,
@@ -397,6 +431,7 @@ export default function App() {
       previousGraphStatusRef.current = tokenRes.graph_sync.status;
       setGraphSyncError(tokenRes.graph_sync.error_message);
       setFeed([]);
+      setFeedFetchedAt(null);
       setFeedError(null);
     } catch (error) {
       setAuthError(errorMessage(error));
@@ -406,9 +441,14 @@ export default function App() {
   }
 
   async function handleSignOut(): Promise<void> {
-    await browser.storage.local.remove(["accessToken", "xUsername"]);
+    await browser.storage.local.remove([
+      "accessToken",
+      "xUsername",
+      "xAvatarUrl",
+    ]);
     setToken(null);
     setXUsername(null);
+    setXAvatarUrl(null);
     setAuthError(null);
     setVisibilityError(null);
     setGraphStatus(null);
@@ -416,8 +456,8 @@ export default function App() {
     setResyncBusy(false);
     previousGraphStatusRef.current = null;
     setFeed([]);
+    setFeedFetchedAt(null);
     setFeedError(null);
-    setFeedLoading(false);
     await browser.storage.local.set({
       [POPUP_FEED_CACHE_STORAGE_KEY]: emptyPopupFeedCache(),
     });
@@ -451,141 +491,219 @@ export default function App() {
     }
   }
 
+  const playingNow =
+    !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
+  const showInitialFeedLoading =
+    loggedIn && feed.length === 0 && feedFetchedAt == null && feedError == null;
   const syncInFlight =
-    resyncBusy || graphStatus?.status === "queued" || graphStatus?.status === "running";
+    resyncBusy ||
+    graphStatus?.status === "queued" ||
+    graphStatus?.status === "running";
   const visibleGraphError = graphSyncError ?? graphStatus?.error_message ?? null;
 
-  return (
-    <main className="jamful-popup">
-      <header className="jamful-popup__masthead">
-        <p className="jamful-popup__eyebrow">Jamful</p>
-        <div className="jamful-popup__header">
-          <h1 className="jamful-popup__title">
-            {loggedIn ? "Friends playing now" : "See who's playing"}
-          </h1>
-          {loggedIn && (
-            <label className="jamful-popup__visibilityToggle">
-              <input
-                className="jamful-popup__visibilityInput"
-                type="checkbox"
-                checked={presenceInvisible}
-                onChange={(event) =>
-                  void handlePresenceInvisibleChange(event.currentTarget.checked)
-                }
-                aria-label="Go invisible"
-              />
-              <span className="jamful-popup__visibilityTrack" aria-hidden="true">
-                <span className="jamful-popup__visibilityKnob" />
-              </span>
-              <span className="jamful-popup__visibilityText">
-                {presenceInvisible ? "Invisible" : "Visible"}
-              </span>
-            </label>
-          )}
+  if (!loggedIn) {
+    return (
+      <main className="flex h-full flex-col bg-background p-6 text-foreground">
+        <div className="flex flex-1 flex-col items-center justify-center space-y-6 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <Gamepad2 className="h-8 w-8 text-primary" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight">Jamful</h1>
+            <p className="mx-auto max-w-[240px] text-sm text-muted-foreground">
+              See what games the people you follow on X are playing.
+            </p>
+          </div>
+          <div className="w-full space-y-3 pt-4">
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={() => void handleSignIn()}
+              disabled={loginBusy || !apiBase}
+            >
+              {loginBusy ? "Signing in..." : "Sign in with X"}
+            </Button>
+            {(authError || configError) && (
+              <p className="text-sm font-medium text-destructive">
+                {authError ?? configError}
+              </p>
+            )}
+          </div>
         </div>
-        {loggedIn && (
-          <p className="jamful-popup__muted">
-            {presenceInvisible
-              ? "Invisible: your game activity is not shared."
-              : "Visible: game activity can be shared with friends."}
-          </p>
-        )}
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex h-full flex-col bg-background text-foreground">
+      <header className="flex shrink-0 items-center justify-between border-b border-border/50 bg-card px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <Avatar className="h-8 w-8">
+            <AvatarImage
+              src={xAvatarUrl ?? undefined}
+              alt={xUsername ?? "User"}
+            />
+            <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
+              {xUsername ? initialsForName(xUsername) : "?"}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col">
+            <span className="text-xs font-semibold leading-none">
+              {xUsername ? `@${xUsername}` : "User"}
+            </span>
+            <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  presenceInvisible || !playingNow
+                    ? "bg-muted-foreground"
+                    : "bg-green-500",
+                )}
+              />
+              {presenceInvisible
+                ? "Invisible"
+                : playingNow && selfPresence.gameName
+                  ? `Playing ${selfPresence.gameName}`
+                  : "Not playing anything"}
+            </span>
+          </div>
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem
+              onClick={() => void handlePresenceInvisibleChange(false)}
+              className="gap-2"
+            >
+              <Eye className="h-4 w-4" />
+              <span>Online</span>
+              {!presenceInvisible && (
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-green-500" />
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void handlePresenceInvisibleChange(true)}
+              className="gap-2"
+            >
+              <EyeOff className="h-4 w-4" />
+              <span>Invisible</span>
+              {presenceInvisible && (
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => void handleSignOut()}
+              className="gap-2 text-destructive focus:text-destructive"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
-      {!loggedIn ? (
-        <section className="jamful-popup__auth">
-          <p className="jamful-popup__muted">
-            Sign in with X to see friends who are active in supported web games.
-          </p>
-          <button
-            type="button"
-            className="jamful-popup__button jamful-popup__button--primary"
-            onClick={() => void handleSignIn()}
-            disabled={loginBusy || !apiBase}
-          >
-            {loginBusy ? "Signing in..." : "Sign in with X"}
-          </button>
-          {(authError || configError) && (
-            <p className="jamful-popup__error">{authError ?? configError}</p>
+      <ScrollArea className="flex-1">
+        <div className="space-y-1.5 p-1.5">
+          {(visibilityError || graphStatus || visibleGraphError) && (
+            <section className="space-y-1.5 px-1.5 pt-1">
+              {visibilityError && (
+                <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+                  {visibilityError}
+                </div>
+              )}
+              <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Follow graph
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">
+                      {graphStatus
+                        ? graphStatusHeadline(graphStatus.status)
+                        : "Checking sync status"}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                      {graphStatus
+                        ? graphStatus.status === "succeeded" &&
+                          graphStatus.last_synced_at != null
+                          ? `Last synced ${formatTimestamp(graphStatus.last_synced_at)}`
+                          : graphStatusCopy(graphStatus.status)
+                        : "Loading your sync state from the API."}
+                    </p>
+                    {visibleGraphError && (
+                      <p className="mt-1.5 text-[11px] leading-4 text-destructive">
+                        {visibleGraphError}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 shrink-0"
+                    onClick={() => void handleResync()}
+                    disabled={!apiBase || syncInFlight}
+                  >
+                    {syncInFlight ? "Syncing..." : "Resync"}
+                  </Button>
+                </div>
+              </div>
+            </section>
           )}
-        </section>
-      ) : (
-        <>
-          <section className="jamful-popup__account" aria-label="Account status">
-            <div className="jamful-popup__accountTop">
-              <div>
-                <p className="jamful-popup__label">Authentication</p>
-                <p className="jamful-popup__signedIn">
-                  Signed in{xUsername ? ` as @${xUsername}` : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="jamful-popup__button jamful-popup__button--quiet"
-                onClick={() => void handleSignOut()}
-              >
-                Sign out
-              </button>
-            </div>
-            <div className="jamful-popup__sync">
-              <div>
-                <p className="jamful-popup__label">Follow graph</p>
-                <p className="jamful-popup__syncHeadline">
-                  {graphStatus ? graphStatusHeadline(graphStatus.status) : "Checking sync status"}
-                </p>
-                <p className="jamful-popup__syncMeta">
-                  {graphStatus
-                    ? graphStatus.status === "succeeded" && graphStatus.last_synced_at != null
-                      ? `Last synced ${formatTimestamp(graphStatus.last_synced_at)}`
-                      : graphStatusCopy(graphStatus.status)
-                    : "Loading your sync state from the API."}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="jamful-popup__button jamful-popup__button--quiet"
-                onClick={() => void handleResync()}
-                disabled={syncInFlight}
-              >
-                {syncInFlight ? "Syncing..." : "Resync"}
-              </button>
-            </div>
-            <PresenceSummary
-              selfPresence={selfPresence}
-              presenceInvisible={presenceInvisible}
-            />
-            {visibilityError && <p className="jamful-popup__error">{visibilityError}</p>}
-            {visibleGraphError && <p className="jamful-popup__error">{visibleGraphError}</p>}
-          </section>
 
-          <section className="jamful-popup__feed" aria-label="Friends playing now">
-            <div className="jamful-popup__feedHeader">
-              <p className="jamful-popup__label">Friends</p>
-              <span className="jamful-popup__count">
-                {feed.length === 1 ? "1 active" : `${feed.length} active`}
-              </span>
+          <div className="mb-0.5 flex items-center justify-between px-1.5 py-1">
+            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              People you follow
+            </h2>
+            <span className="rounded-sm bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">
+              {feed.length}
+            </span>
+          </div>
+
+          {feed.length > 0 ? (
+            <div className="flex flex-col gap-0.5">
+              {feed.map((entry) => (
+                <FriendRow
+                  key={`${entry.session_id}:${entry.friend.name}:${entry.game.url}`}
+                  entry={entry}
+                />
+              ))}
             </div>
-
-            {feed.length > 0 ? (
-              <ul className="jamful-popup__friendList">
-                {feed.map((entry) => (
-                  <FriendRow
-                    key={`${entry.session_id}:${entry.friend.name}:${entry.game.url}`}
-                    entry={entry}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <div className="jamful-popup__empty">
-                <p>{feedLoading ? "Loading friends..." : "No friends are playing right now."}</p>
-                <span>Open the popup later or start a game so friends can jump in.</span>
+          ) : (
+            <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Gamepad2 className="h-6 w-6 text-muted-foreground/50" />
               </div>
-            )}
-
-            {feedError && <p className="jamful-popup__error">{feedError}</p>}
-          </section>
-        </>
-      )}
+              <p className="text-sm font-medium text-foreground">
+                {showInitialFeedLoading
+                  ? "Loading list..."
+                  : syncInFlight
+                    ? "Syncing follows..."
+                    : "Nobody is playing right now"}
+              </p>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {syncInFlight
+                  ? "New matches will appear after the follow graph refresh finishes."
+                  : "Open the popup later to check again."}
+              </p>
+            </div>
+          )}
+          {feedError && (
+            <p className="mt-4 px-4 text-center text-xs text-destructive">
+              {feedError}
+            </p>
+          )}
+        </div>
+      </ScrollArea>
     </main>
   );
 }

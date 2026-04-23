@@ -185,6 +185,7 @@ export default {
           {
             access_token,
             token_type: "Bearer",
+            user_id: user.id,
             x_username: me.username,
             user: {
               id: user.id,
@@ -196,6 +197,7 @@ export default {
             graph_sync: {
               ...graphSummary(status),
             },
+            avatar_url: me.profile_image_url ?? "",
           },
           200,
           origin,

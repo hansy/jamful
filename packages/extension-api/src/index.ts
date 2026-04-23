@@ -16,7 +16,9 @@ export type XAuthorizeUrlResponse = {
 };
 
 export type XTokenResponse = AuthTokens & {
+  user_id: string;
   x_username: string;
+  avatar_url: string;
   user: AuthenticatedUser;
   graph_sync: {
     status: GraphStatusResponse["status"];
