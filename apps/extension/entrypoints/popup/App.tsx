@@ -22,7 +22,11 @@ import {
 } from "../../lib/self-presence";
 import { createPkcePair } from "./pkce";
 
-import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "../../components/ui/avatar";
 import { Button } from "../../components/ui/button";
 import {
   DropdownMenu,
@@ -32,8 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { Separator } from "../../components/ui/separator";
-import { ChevronDown, LogOut, Eye, EyeOff, Gamepad2, Play, ExternalLink } from "lucide-react";
+import { ChevronDown, LogOut, Eye, EyeOff, Gamepad2, Play } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const FEED_REFRESH_MS = 60_000;
@@ -43,13 +46,25 @@ function errorMessage(error: unknown): string {
 }
 
 function initialsForName(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2);
+  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
   const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
   return initials || "?";
+}
+
+function avatarUrlFromAccessToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const parsed = JSON.parse(atob(padded)) as { av?: unknown };
+    return typeof parsed.av === "string" && parsed.av.length > 0
+      ? parsed.av
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function FriendRow({ entry }: { entry: FeedEntry }) {
@@ -58,17 +73,17 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
   return (
     <div className="flex items-center gap-2.5 px-2 py-1.5 hover:bg-accent/50 transition-colors group rounded-md">
       <div className="relative shrink-0">
-        <Avatar className="h-7 w-7 border border-border/50">
+        <Avatar className="h-7 w-7">
           <AvatarImage src={entry.friend.avatar_url} alt={entry.friend.name} />
           <AvatarFallback className="bg-muted text-muted-foreground text-[10px]">
             {initialsForName(entry.friend.name)}
           </AvatarFallback>
         </Avatar>
         {entry.game.icon_url && (
-          <img 
-            src={entry.game.icon_url} 
-            alt={gameName} 
-            className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-sm border border-background bg-background object-cover" 
+          <img
+            src={entry.game.icon_url}
+            alt={gameName}
+            className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-sm border border-background bg-background object-cover"
           />
         )}
       </div>
@@ -80,14 +95,19 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
         </div>
         <p className="text-[10px] text-muted-foreground truncate mt-0.5 flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-          <span className="truncate">Playing <span className="font-medium text-foreground">{gameName}</span></span>
+          <span className="truncate">
+            Playing{" "}
+            <span className="font-medium text-foreground">{gameName}</span>
+          </span>
         </p>
       </div>
       <Button
         variant="secondary"
         size="icon"
-        className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
-        onClick={() => void browser.tabs.create({ url: entry.game.url, active: true })}
+        className="h-6 w-6 shrink-0 rounded-full opacity-0 transition-opacity group-hover:opacity-100 focus-visible:ring-0 focus-visible:ring-offset-0"
+        onClick={() =>
+          void browser.tabs.create({ url: entry.game.url, active: true })
+        }
         title={`Join ${entry.friend.name} in ${gameName}`}
       >
         <Play className="h-3 w-3 ml-0.5" />
@@ -99,12 +119,13 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [xUsername, setXUsername] = useState<string | null>(null);
+  const [xAvatarUrl, setXAvatarUrl] = useState<string | null>(null);
   const [presenceInvisible, setPresenceInvisible] = useState(false);
   const [selfPresence, setSelfPresence] = useState<PopupSelfPresence>(
     inactivePopupSelfPresence(),
   );
   const [feed, setFeed] = useState<FeedEntry[]>([]);
-  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedFetchedAt, setFeedFetchedAt] = useState<number | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
@@ -121,16 +142,29 @@ export default function App() {
       const stored = await browser.storage.local.get([
         "accessToken",
         "xUsername",
+        "xAvatarUrl",
         "presenceInvisible",
         POPUP_FEED_CACHE_STORAGE_KEY,
         POPUP_SELF_PRESENCE_STORAGE_KEY,
       ]);
       if (cancelled) return;
-      setToken(typeof stored.accessToken === "string" ? stored.accessToken : null);
-      setXUsername(typeof stored.xUsername === "string" ? stored.xUsername : null);
+      const storedToken =
+        typeof stored.accessToken === "string" ? stored.accessToken : null;
+      setToken(storedToken);
+      setXUsername(
+        typeof stored.xUsername === "string" ? stored.xUsername : null,
+      );
+      setXAvatarUrl(
+        typeof stored.xAvatarUrl === "string" && stored.xAvatarUrl.length > 0
+          ? stored.xAvatarUrl
+          : avatarUrlFromAccessToken(storedToken),
+      );
       setPresenceInvisible(stored.presenceInvisible === true);
-      const feedCache = coercePopupFeedCache(stored[POPUP_FEED_CACHE_STORAGE_KEY]);
+      const feedCache = coercePopupFeedCache(
+        stored[POPUP_FEED_CACHE_STORAGE_KEY],
+      );
       setFeed(feedCache.entries);
+      setFeedFetchedAt(feedCache.fetchedAt);
       setFeedError(feedCache.error);
       setSelfPresence(
         coercePopupSelfPresence(stored[POPUP_SELF_PRESENCE_STORAGE_KEY]),
@@ -143,16 +177,27 @@ export default function App() {
     ): void {
       if (area !== "local") return;
       if (changes.accessToken) {
-        setToken(
+        const nextToken =
           typeof changes.accessToken.newValue === "string"
             ? changes.accessToken.newValue
-            : null,
-        );
+            : null;
+        setToken(nextToken);
+        if (!changes.xAvatarUrl) {
+          setXAvatarUrl(avatarUrlFromAccessToken(nextToken));
+        }
       }
       if (changes.xUsername) {
         setXUsername(
           typeof changes.xUsername.newValue === "string"
             ? changes.xUsername.newValue
+            : null,
+        );
+      }
+      if (changes.xAvatarUrl) {
+        setXAvatarUrl(
+          typeof changes.xAvatarUrl.newValue === "string" &&
+            changes.xAvatarUrl.newValue.length > 0
+            ? changes.xAvatarUrl.newValue
             : null,
         );
       }
@@ -164,8 +209,8 @@ export default function App() {
           changes[POPUP_FEED_CACHE_STORAGE_KEY].newValue,
         );
         setFeed(feedCache.entries);
+        setFeedFetchedAt(feedCache.fetchedAt);
         setFeedError(feedCache.error);
-        setFeedLoading(false);
       }
       if (changes[POPUP_SELF_PRESENCE_STORAGE_KEY]) {
         setSelfPresence(
@@ -185,7 +230,8 @@ export default function App() {
 
   useEffect(() => {
     if (!selfPresence.active || selfPresence.lastHeartbeatAt == null) return;
-    const expiresAt = selfPresence.lastHeartbeatAt + POPUP_SELF_PRESENCE_EXPIRY_MS;
+    const expiresAt =
+      selfPresence.lastHeartbeatAt + POPUP_SELF_PRESENCE_EXPIRY_MS;
     const remaining = expiresAt - Date.now();
     if (remaining <= 0) return;
 
@@ -196,7 +242,7 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [selfPresence]);
 
-  const refreshFeed = useEffectEvent(async () => {
+  const refreshFeed = useEffectEvent(() => {
     if (!token) return;
     if (!apiBase) {
       startTransition(() => {
@@ -205,29 +251,28 @@ export default function App() {
       return;
     }
 
-    if (feed.length === 0) setFeedLoading(true);
-
-    try {
-      await browser.runtime.sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE });
-    } catch (error) {
-      startTransition(() => {
-        setFeedError(errorMessage(error));
+    void browser.runtime
+      .sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE })
+      .catch((error) => {
+        startTransition(() => {
+          setFeedError(errorMessage(error));
+        });
       });
-    } finally {
-      setFeedLoading(false);
-    }
   });
 
   useEffect(() => {
     if (!loggedIn) {
       setFeed([]);
+      setFeedFetchedAt(null);
       setFeedError(null);
-      setFeedLoading(false);
       return;
     }
 
     void refreshFeed();
-    const interval = window.setInterval(() => void refreshFeed(), FEED_REFRESH_MS);
+    const interval = window.setInterval(
+      () => void refreshFeed(),
+      FEED_REFRESH_MS,
+    );
     return () => window.clearInterval(interval);
   }, [loggedIn, refreshFeed]);
 
@@ -282,10 +327,13 @@ export default function App() {
       await browser.storage.local.set({
         accessToken: tokenRes.access_token,
         xUsername: tokenRes.x_username,
+        xAvatarUrl: tokenRes.avatar_url,
       });
       setToken(tokenRes.access_token);
       setXUsername(tokenRes.x_username);
+      setXAvatarUrl(tokenRes.avatar_url || null);
       setFeed([]);
+      setFeedFetchedAt(null);
       setFeedError(null);
     } catch (error) {
       setAuthError(errorMessage(error));
@@ -295,14 +343,19 @@ export default function App() {
   }
 
   async function handleSignOut(): Promise<void> {
-    await browser.storage.local.remove(["accessToken", "xUsername"]);
+    await browser.storage.local.remove([
+      "accessToken",
+      "xUsername",
+      "xAvatarUrl",
+    ]);
     setToken(null);
     setXUsername(null);
+    setXAvatarUrl(null);
     setAuthError(null);
     setVisibilityError(null);
     setFeed([]);
+    setFeedFetchedAt(null);
     setFeedError(null);
-    setFeedLoading(false);
     await browser.storage.local.set({
       [POPUP_FEED_CACHE_STORAGE_KEY]: emptyPopupFeedCache(),
     });
@@ -320,7 +373,10 @@ export default function App() {
     }
   }
 
-  const playingNow = !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
+  const playingNow =
+    !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
+  const showInitialFeedLoading =
+    loggedIn && feed.length === 0 && feedFetchedAt == null && feedError == null;
 
   if (!loggedIn) {
     return (
@@ -332,7 +388,7 @@ export default function App() {
           <div className="space-y-2">
             <h1 className="text-2xl font-bold tracking-tight">Jamful</h1>
             <p className="text-muted-foreground text-sm max-w-[240px] mx-auto">
-              See what your friends are playing and join them instantly.
+              See what games the people you follow on X are playing.
             </p>
           </div>
           <div className="w-full space-y-3 pt-4">
@@ -359,7 +415,11 @@ export default function App() {
     <main className="flex flex-col h-full bg-background text-foreground">
       <header className="px-3 py-2.5 flex items-center justify-between border-b border-border/50 shrink-0 bg-card">
         <div className="flex items-center gap-2.5">
-          <Avatar className="h-8 w-8 border border-border/50">
+          <Avatar className="h-8 w-8">
+            <AvatarImage
+              src={xAvatarUrl ?? undefined}
+              alt={xUsername ?? "User"}
+            />
             <AvatarFallback className="bg-primary/10 text-primary font-medium text-xs">
               {xUsername ? initialsForName(xUsername) : "?"}
             </AvatarFallback>
@@ -372,12 +432,14 @@ export default function App() {
               <span
                 className={cn(
                   "w-1.5 h-1.5 rounded-full shrink-0",
-                  presenceInvisible || !playingNow ? "bg-muted-foreground" : "bg-green-500"
+                  presenceInvisible || !playingNow
+                    ? "bg-muted-foreground"
+                    : "bg-green-500",
                 )}
               />
-              {presenceInvisible 
-                ? "Invisible" 
-                : playingNow && selfPresence.gameName 
+              {presenceInvisible
+                ? "Invisible"
+                : playingNow && selfPresence.gameName
                   ? `Playing ${selfPresence.gameName}`
                   : "Not playing anything"}
             </span>
@@ -386,7 +448,11 @@ export default function App() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
@@ -412,7 +478,10 @@ export default function App() {
               )}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => void handleSignOut()} className="gap-2 text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              onClick={() => void handleSignOut()}
+              className="gap-2 text-destructive focus:text-destructive"
+            >
               <LogOut className="h-4 w-4" />
               <span>Sign out</span>
             </DropdownMenuItem>
@@ -430,7 +499,7 @@ export default function App() {
         <div className="p-1.5">
           <div className="px-1.5 py-1 flex items-center justify-between mb-0.5">
             <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Friends Playing
+              People you follow
             </h2>
             <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-px rounded-sm">
               {feed.length}
@@ -452,12 +521,9 @@ export default function App() {
                 <Gamepad2 className="w-6 h-6 text-muted-foreground/50" />
               </div>
               <p className="text-sm font-medium text-foreground">
-                {feedLoading ? "Loading friends..." : "No friends playing"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
-                {feedLoading
-                  ? "Fetching latest activity"
-                  : "When your friends start playing, they'll appear here."}
+                {showInitialFeedLoading
+                  ? "Loading list..."
+                  : "Nobody is playing right now"}
               </p>
             </div>
           )}

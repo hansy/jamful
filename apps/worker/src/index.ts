@@ -149,6 +149,7 @@ export default {
             token_type: "Bearer",
             user_id: me.id,
             x_username: me.username,
+            avatar_url: me.profile_image_url ?? "",
           },
           200,
           origin,
