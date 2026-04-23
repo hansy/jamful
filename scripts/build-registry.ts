@@ -1,7 +1,6 @@
 /**
- * Maps data/seedGames.json → KV payload at registry:v1 (games array + updated_at).
+ * Maps data/seedGames.json → bundled registry payload (games array + updated_at).
  * Run: bun scripts/build-registry.ts
- * Then: cd apps/worker && npx wrangler kv key put registry:v1 --path ../../data/registry.v1.json --binding JAMFUL_KV --local
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

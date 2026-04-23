@@ -13,7 +13,6 @@ import { encryptSecret } from "./crypto";
 import { getActiveFeedRows } from "./feed";
 import { gameById, getRegistryGames } from "./games";
 import { handleGraphSyncMessage } from "./graph-sync";
-import { listNotifications } from "./notifications";
 import { handlePresenceQueueMessage } from "./presence-events";
 import {
   logWorkerError,
@@ -23,7 +22,6 @@ import {
   signInUnavailableMessage,
 } from "./public-errors";
 import type { GraphSyncQueueMessage, JWTPayload, PresenceQueueMessage } from "./types";
-import { UserInboxDO } from "./user-inbox-do";
 import { UserPresenceDO } from "./user-presence-do";
 import {
   getGraphStatus,
@@ -32,7 +30,7 @@ import {
   upsertUserFromX,
 } from "./users";
 
-export { UserInboxDO, UserPresenceDO };
+export { UserPresenceDO };
 
 const MANUAL_FOLLOWINGS_SYNC_MIN_INTERVAL_MS = 60_000;
 
@@ -197,16 +195,16 @@ export default {
         }
 
         const { user: me } = await fetchXMe(xTokens.access_token);
-        const user = await upsertUserFromX(env.JAMFUL_DB, me, { touchLogin: true });
+        const user = await upsertUserFromX(env.JAMFUL_D1, me, { touchLogin: true });
         const encrypted = await encryptSecret(xTokens.refresh_token, env);
         await upsertOAuthCredential(
-          env.JAMFUL_DB,
+          env.JAMFUL_D1,
           user.id,
           me.id,
           encrypted,
           xTokens.scope ?? null,
         );
-        await queueGraphSyncRun(env.JAMFUL_DB, env.GRAPH_SYNC_QUEUE, user.id, "initial");
+        await queueGraphSyncRun(env.JAMFUL_D1, env.GRAPH_SYNC_QUEUE, user.id, "initial");
         const payload: JWTPayload = {
           sub: user.id,
           xid: me.id,
@@ -214,7 +212,7 @@ export default {
           av: me.profile_image_url ?? "",
         };
         const access_token = await signAccessToken(payload, env.JWT_SECRET, 60 * 60 * 24 * 30);
-        const status = await getGraphStatus(env.JAMFUL_DB, user.id);
+        const status = await getGraphStatus(env.JAMFUL_D1, user.id);
         return json(
           {
             access_token,
@@ -250,13 +248,13 @@ export default {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
       const { run, throttled } = await queueGraphSyncRun(
-        env.JAMFUL_DB,
+        env.JAMFUL_D1,
         env.GRAPH_SYNC_QUEUE,
         user.sub,
         "manual",
         { minIntervalMs: MANUAL_FOLLOWINGS_SYNC_MIN_INTERVAL_MS },
       );
-      const status = await getGraphStatus(env.JAMFUL_DB, user.sub);
+      const status = await getGraphStatus(env.JAMFUL_D1, user.sub);
       return json(
         {
           sync_run_id: run.id,
@@ -273,14 +271,14 @@ export default {
     if (path === "/graph/status" && request.method === "GET") {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
-      const status = await getGraphStatus(env.JAMFUL_DB, user.sub);
+      const status = await getGraphStatus(env.JAMFUL_D1, user.sub);
       return json(sanitizeGraphStatus(status), 200, origin);
     }
 
     if (path === "/games" && request.method === "GET") {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
-      const games = await getRegistryGames(env);
+      const games = getRegistryGames();
       return json(games, 200, origin);
     }
 
@@ -329,8 +327,8 @@ export default {
     if (path === "/feed" && request.method === "GET") {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
-      const games = await getRegistryGames(env);
-      const rows = await getActiveFeedRows(env.JAMFUL_DB, user.sub);
+      const games = getRegistryGames();
+      const rows = await getActiveFeedRows(env.JAMFUL_D1, user.sub);
       const entries: FeedEntry[] = [];
       for (const row of rows) {
         const game = gameById(games, row.game_id);
@@ -342,13 +340,6 @@ export default {
         });
       }
       return json(entries, 200, origin);
-    }
-
-    if (path === "/notifications" && request.method === "GET") {
-      const user = await authUser(request, env);
-      if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
-      const cursor = url.searchParams.get("cursor");
-      return json(await listNotifications(env.JAMFUL_DB, user.sub, cursor), 200, origin);
     }
 
     if (path === "/health" && request.method === "GET") {

@@ -1,17 +1,11 @@
 import type { Game } from "@jamful/shared";
+import registryJson from "../../../data/registry.v1.json";
 import type { RegistryPayload } from "./types";
 
-const REGISTRY_KEY = "registry:v1";
+const registry = registryJson as RegistryPayload;
 
-export async function getRegistryGames(env: Env): Promise<Game[]> {
-  const raw = await env.JAMFUL_KV.get(REGISTRY_KEY);
-  if (!raw) return [];
-  try {
-    const p = JSON.parse(raw) as RegistryPayload;
-    return p.games ?? [];
-  } catch {
-    return [];
-  }
+export function getRegistryGames(): Game[] {
+  return registry.games ?? [];
 }
 
 export function gameById(games: Game[], id: string): Game | null {

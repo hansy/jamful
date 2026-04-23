@@ -7,7 +7,7 @@ type RegistryFile = {
 
 const payload = registryPayload as RegistryFile;
 
-/** Canonical allowlist (same shape as worker KV `registry:v1`). */
+/** Canonical game registry shared with the worker via the bundled JSON payload. */
 export const bundledGames: Game[] = Array.isArray(payload.games) ? payload.games : [];
 
 function normalizeGameUrl(raw: string): URL | null {

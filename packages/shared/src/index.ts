@@ -66,18 +66,3 @@ export type GraphStatusResponse = {
   active_run: GraphSyncRunSummary | null;
   last_run: GraphSyncRunSummary | null;
 };
-
-export type InboxNotification = {
-  id: string;
-  recipient_user_id: string;
-  friend_user_id: string;
-  session_id: string;
-  game_id: string;
-  created_at: number;
-  read: boolean;
-};
-
-export type NotificationsPollResult = {
-  items: InboxNotification[];
-  next_cursor: string | null;
-};

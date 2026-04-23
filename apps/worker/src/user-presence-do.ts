@@ -1,15 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
 import type { PresenceQueueMessage, SessionBlob } from "./types";
 
+const SESSION_EXPIRY_MS = 120_000;
+
 export class UserPresenceDO extends DurableObject {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
   }
 
   private sessionExpiryMs(): number {
-    const raw = this.env.SESSION_EXPIRY_MS;
-    const n = raw ? parseInt(String(raw), 10) : 120_000;
-    return Number.isFinite(n) ? n : 120_000;
+    return SESSION_EXPIRY_MS;
   }
 
   async fetch(request: Request): Promise<Response> {

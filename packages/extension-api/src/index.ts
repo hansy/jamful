@@ -3,7 +3,6 @@ import type {
   FeedEntry,
   Game,
   GraphStatusResponse,
-  NotificationsPollResult,
 } from "@jamful/shared";
 
 export type AuthTokens = {
@@ -121,11 +120,6 @@ export class JamfulApiClient {
 
   async getFeed(): Promise<FeedEntry[]> {
     return this.request<FeedEntry[]>("/feed");
-  }
-
-  async getNotifications(cursor: string | null): Promise<NotificationsPollResult> {
-    const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-    return this.request<NotificationsPollResult>(`/notifications${q}`);
   }
 
   async getGraphStatus(): Promise<GraphStatusResponse> {

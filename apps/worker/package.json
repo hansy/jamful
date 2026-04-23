@@ -8,7 +8,7 @@
     "dev:setup": "bun ./scripts/dev-setup.ts",
     "migrate:local": "wrangler d1 migrations apply jamful --local",
     "deploy": "wrangler deploy",
-    "cf-types": "wrangler types --env-file .env.cf-generate",
+    "cf-types": "wrangler types",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

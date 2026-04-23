@@ -507,7 +507,7 @@ Expected implementation areas:
 
 ## Open Decisions
 
-- Keep the game registry in KV for now, or move it into D1 later.
+- Keep the game registry as bundled JSON for now, or move it into D1 later.
 - Whether to add `read` state mutation for notifications in this phase.
 - Whether initial sign-in should block until the first sync finishes. Recommended: no, queue it and show sync status.
 

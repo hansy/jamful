@@ -263,7 +263,6 @@ Flow:
   - Game registry endpoint
   - Presence endpoints (heartbeat)
   - Feed endpoint
-  - Legacy notifications endpoint (not consumed by the current extension UI)
   - Routes requests to Durable Objects
 
 - **Durable Objects (SQLite-backed)**
@@ -277,19 +276,15 @@ Flow:
     - Handles heartbeat → start/update session
     - Emits `session_started` events when a new session begins
 
-  - `UserInboxDO(recipientUserId)` (legacy)
-    - Stores per-recipient notifications
-    - Not used by the current extension UI
-
 - **Queues (fanout)**
   - Topic: `presence-events`
   - Producer: `UserPresenceDO` on new session
   - Consumer:
     - Resolves followers of `friend_user_id`
-    - Materializes feed/notification state for downstream reads
+    - Materializes current presence state for feed reads
 
-- **KV (global cache)**
-  - Game registry (id, name, url, icon_url) — populated from repo `data/seedGames.json` via `scripts/build-registry.ts` and `wrangler kv` (no runtime fetch)
+- **Bundled registry data**
+  - Game registry (id, name, url, icon_url) — populated from repo `data/seedGames.json` via `scripts/build-registry.ts` into `data/registry.v1.json`
   - Optional: feature flags / config
   - Read-heavy, low-latency global access
 
@@ -324,20 +319,6 @@ Session {
 }
 ```
 
-### Notification (in `UserInboxDO` storage)
-
-```ts
-Notification {
-  id: string
-  recipient_user_id: string
-  friend_user_id: string
-  session_id: string
-  game_id: string
-  created_at: timestamp
-  read: boolean
-}
-```
-
 ### Follow Graph (v0)
 
 - Materialized per followed user (e.g., stored in KV):
@@ -357,7 +338,7 @@ Notification {
 ### Registry
 
 - Authenticated `GET /games` (not a public anonymous catalog in v0)
-- Registry JSON is built from `data/seedGames.json` and written to KV (`registry:v1`); worker reads only from KV
+- Registry JSON is built from `data/seedGames.json` into `data/registry.v1.json`; extension and worker both bundle that file locally
 
 ### Presence
 
@@ -369,14 +350,6 @@ Notification {
 
 - `GET /feed`
   - Returns active sessions for followed users (derived from DOs)
-
-### Notifications
-
-- `GET /notifications?cursor=...`
-  - Legacy endpoint; current extension UI does not poll it
-  - Worker returns notification rows for possible future use
-
----
 
 ## 12. Presence & Feed Flow
 
@@ -471,7 +444,6 @@ repo/
         routes/
         auth/
         presence/
-        notifications/
 
   packages/
     extension-core/
@@ -479,7 +451,6 @@ repo/
       presence-state-machine/
       heartbeat/
       url-matching/
-      notification-dedupe/
 
     extension-api/
       # API client wrappers
@@ -533,7 +504,7 @@ repo/
 ### Must Have
 
 - Auth (X OAuth 2.0 with PKCE)
-- Game registry in KV (from `data/seedGames.json` → `registry:v1`)
+- Bundled game registry (from `data/seedGames.json` → `data/registry.v1.json`)
 - URL detection
 - Heartbeat (60s)
 - `UserPresenceDO`
@@ -552,9 +523,9 @@ repo/
 
 ## 20. Key Decisions
 
-- **Durable Objects for coordination** (presence + inbox)
+- **Durable Objects for coordination** (presence)
 - **Queues for async fanout**
-- **KV for registry**
+- **Bundled registry JSON**
 - **Polling (60s) for feed refresh**
 - **Session-based dedupe using `session_id`**
 

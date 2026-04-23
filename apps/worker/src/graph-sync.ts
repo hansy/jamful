@@ -4,7 +4,6 @@ import {
   chunked,
   errorMessage,
   maxChunkSizeForBoundQuery,
-  parsePositiveInt,
   placeholders,
 } from "./db";
 import { graphSyncFailureMessage, logWorkerError } from "./public-errors";
@@ -19,9 +18,7 @@ import {
   upsertUserFromX,
 } from "./users";
 
-function followSyncMaxPages(env: Env): number {
-  return parsePositiveInt(env.X_FOLLOW_SYNC_MAX_PAGES, 25);
-}
+const FOLLOW_SYNC_MAX_PAGES = 25;
 
 function isRetryable(error: unknown): boolean {
   return /\b(429|500|502|503|504)\b/.test(errorMessage(error));
@@ -71,7 +68,7 @@ async function replaceJamfulFollowEdges(
 }
 
 async function executeGraphSync(env: Env, userId: string): Promise<number> {
-  const credential = await getOAuthCredential(env.JAMFUL_DB, userId);
+  const credential = await getOAuthCredential(env.JAMFUL_D1, userId);
   if (!credential) {
     throw new Error("No refresh token stored for user");
   }
@@ -96,7 +93,7 @@ async function executeGraphSync(env: Env, userId: string): Promise<number> {
   if (tokens.refresh_token?.trim()) {
     const encrypted = await encryptSecret(tokens.refresh_token, env);
     await upsertOAuthCredential(
-      env.JAMFUL_DB,
+      env.JAMFUL_D1,
       userId,
       credential.provider_user_id,
       encrypted,
@@ -105,20 +102,20 @@ async function executeGraphSync(env: Env, userId: string): Promise<number> {
   }
 
   const { user: me, xApiBase } = await fetchXMe(tokens.access_token);
-  await upsertUserFromX(env.JAMFUL_DB, me, { touchLogin: false });
+  await upsertUserFromX(env.JAMFUL_D1, me, { touchLogin: false });
 
   const followingIds = await fetchXFollowingUserIds(
     tokens.access_token,
     me.id,
     xApiBase,
-    followSyncMaxPages(env),
+    FOLLOW_SYNC_MAX_PAGES,
   );
   const jamfulFolloweeIds = await lookupJamfulUserIdsByXUserIds(
-    env.JAMFUL_DB,
+    env.JAMFUL_D1,
     followingIds,
     userId,
   );
-  await replaceJamfulFollowEdges(env.JAMFUL_DB, userId, jamfulFolloweeIds);
+  await replaceJamfulFollowEdges(env.JAMFUL_D1, userId, jamfulFolloweeIds);
   return jamfulFolloweeIds.length;
 }
 
@@ -127,11 +124,11 @@ export async function handleGraphSyncMessage(
   msg: Message<GraphSyncQueueMessage>,
 ): Promise<void> {
   const { sync_run_id: runId, user_id: userId } = msg.body;
-  await markGraphSyncRunning(env.JAMFUL_DB, userId, runId);
+  await markGraphSyncRunning(env.JAMFUL_D1, userId, runId);
 
   try {
     const jamfulEdgesFound = await executeGraphSync(env, userId);
-    await markGraphSyncSucceeded(env.JAMFUL_DB, userId, runId, jamfulEdgesFound);
+    await markGraphSyncSucceeded(env.JAMFUL_D1, userId, runId, jamfulEdgesFound);
     msg.ack();
   } catch (error) {
     const publicMessage = graphSyncFailureMessage(error);
@@ -141,7 +138,7 @@ export async function handleGraphSyncMessage(
       attempts: msg.attempts,
       publicMessage,
     });
-    await markGraphSyncFailed(env.JAMFUL_DB, userId, runId, publicMessage);
+    await markGraphSyncFailed(env.JAMFUL_D1, userId, runId, publicMessage);
     if (msg.attempts < 3 && isRetryable(error)) {
       msg.retry();
       return;

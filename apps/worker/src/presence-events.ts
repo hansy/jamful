@@ -8,9 +8,9 @@ export async function handlePresenceQueueMessage(
 ): Promise<void> {
   try {
     if (msg.body.kind === "session_started") {
-      await fanoutSessionStarted(env.JAMFUL_DB, msg.body);
+      await fanoutSessionStarted(env.JAMFUL_D1, msg.body);
     } else if (msg.body.kind === "session_stopped") {
-      await fanoutSessionStopped(env.JAMFUL_DB, msg.body);
+      await fanoutSessionStopped(env.JAMFUL_D1, msg.body);
     }
     msg.ack();
   } catch (error) {
