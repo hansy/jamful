@@ -6,6 +6,14 @@ export type Game = {
   icon_url: string;
 };
 
+export type AuthenticatedUser = {
+  id: string;
+  x_user_id: string;
+  x_username: string;
+  name: string;
+  avatar_url: string;
+};
+
 export type Session = {
   session_id: string;
   user_id: string;
@@ -29,6 +37,34 @@ export type FeedEntry = {
   friend: FriendPreview;
   game: GamePreview;
   session_id: string;
+};
+
+export type GraphSyncStatus =
+  | "never"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+export type GraphSyncTrigger = "initial" | "manual";
+
+export type GraphSyncRunSummary = {
+  id: string;
+  trigger: GraphSyncTrigger;
+  status: GraphSyncStatus;
+  requested_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+  jamful_edges_found: number | null;
+  error_message: string | null;
+};
+
+export type GraphStatusResponse = {
+  status: GraphSyncStatus;
+  last_synced_at: number | null;
+  error_message: string | null;
+  active_run: GraphSyncRunSummary | null;
+  last_run: GraphSyncRunSummary | null;
 };
 
 export type InboxNotification = {

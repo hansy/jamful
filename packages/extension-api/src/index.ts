@@ -1,4 +1,10 @@
-import type { FeedEntry, Game, InboxNotification, NotificationsPollResult } from "@jamful/shared";
+import type {
+  AuthenticatedUser,
+  FeedEntry,
+  Game,
+  GraphStatusResponse,
+  NotificationsPollResult,
+} from "@jamful/shared";
 
 export type AuthTokens = {
   access_token: string;
@@ -13,6 +19,19 @@ export type XTokenResponse = AuthTokens & {
   user_id: string;
   x_username: string;
   avatar_url: string;
+  user: AuthenticatedUser;
+  graph_sync: {
+    status: GraphStatusResponse["status"];
+    last_synced_at: number | null;
+    error_message: string | null;
+  };
+};
+
+export type GraphResyncResponse = {
+  sync_run_id: string;
+  status: "queued" | "running";
+  requested_at: number;
+  last_synced_at: number | null;
 };
 
 export class JamfulApiClient {
@@ -65,6 +84,16 @@ export class JamfulApiClient {
   async getNotifications(cursor: string | null): Promise<NotificationsPollResult> {
     const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
     return this.request<NotificationsPollResult>(`/notifications${q}`);
+  }
+
+  async getGraphStatus(): Promise<GraphStatusResponse> {
+    return this.request<GraphStatusResponse>("/graph/status");
+  }
+
+  async resyncGraph(): Promise<GraphResyncResponse> {
+    return this.request<GraphResyncResponse>("/graph/resync", {
+      method: "POST",
+    });
   }
 
   async getXAuthorizationUrl(body: {

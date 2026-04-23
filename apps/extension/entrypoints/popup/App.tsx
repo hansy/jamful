@@ -1,5 +1,5 @@
-import { startTransition, useEffect, useEffectEvent, useState } from "react";
-import type { FeedEntry } from "@jamful/shared";
+import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
+import type { FeedEntry, GraphStatusResponse, GraphSyncStatus } from "@jamful/shared";
 import { browser } from "wxt/browser";
 import { JamfulApiClient } from "@jamful/extension-api";
 import {
@@ -36,13 +36,55 @@ import {
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { ChevronDown, LogOut, Eye, EyeOff, Gamepad2, Play } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Gamepad2, LogOut, Play } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const FEED_REFRESH_MS = 60_000;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatTimestamp(value: number | null): string {
+  if (value == null) return "Never";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function graphStatusHeadline(status: GraphSyncStatus): string {
+  switch (status) {
+    case "queued":
+      return "Sync queued";
+    case "running":
+      return "Syncing follows";
+    case "succeeded":
+      return "Graph is ready";
+    case "failed":
+      return "Sync failed";
+    case "never":
+    default:
+      return "Graph not synced yet";
+  }
+}
+
+function graphStatusCopy(status: GraphSyncStatus): string {
+  switch (status) {
+    case "queued":
+      return "Jamful will refresh your followed players in the background.";
+    case "running":
+      return "We’re checking which people you follow are already in Jamful.";
+    case "succeeded":
+      return "Your followed Jamful players are up to date.";
+    case "failed":
+      return "Try resyncing again. If it keeps failing, sign out and reconnect X.";
+    case "never":
+    default:
+      return "Run your first sync to discover which people you follow use Jamful.";
+  }
 }
 
 function initialsForName(name: string): string {
@@ -71,11 +113,11 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
   const gameName = entry.game.name || "Unknown game";
 
   return (
-    <div className="flex items-center gap-2.5 px-2 py-1.5 hover:bg-accent/50 transition-colors group rounded-md">
+    <div className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50">
       <div className="relative shrink-0">
         <Avatar className="h-7 w-7">
           <AvatarImage src={entry.friend.avatar_url} alt={entry.friend.name} />
-          <AvatarFallback className="bg-muted text-muted-foreground text-[10px]">
+          <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
             {initialsForName(entry.friend.name)}
           </AvatarFallback>
         </Avatar>
@@ -83,21 +125,18 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
           <img
             src={entry.game.icon_url}
             alt={gameName}
-            className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-sm border border-background bg-background object-cover"
+            className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-sm border border-background bg-background object-cover"
           />
         )}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="text-xs font-medium leading-none truncate">
-            {entry.friend.name}
-          </p>
-        </div>
-        <p className="text-[10px] text-muted-foreground truncate mt-0.5 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium leading-none">
+          {entry.friend.name}
+        </p>
+        <p className="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-muted-foreground">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
           <span className="truncate">
-            Playing{" "}
-            <span className="font-medium text-foreground">{gameName}</span>
+            Playing <span className="font-medium text-foreground">{gameName}</span>
           </span>
         </p>
       </div>
@@ -110,7 +149,7 @@ function FriendRow({ entry }: { entry: FeedEntry }) {
         }
         title={`Join ${entry.friend.name} in ${gameName}`}
       >
-        <Play className="h-3 w-3 ml-0.5" />
+        <Play className="ml-0.5 h-3 w-3" />
       </Button>
     </div>
   );
@@ -130,6 +169,10 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
+  const [graphStatus, setGraphStatus] = useState<GraphStatusResponse | null>(null);
+  const [graphSyncError, setGraphSyncError] = useState<string | null>(null);
+  const [resyncBusy, setResyncBusy] = useState(false);
+  const previousGraphStatusRef = useRef<GraphSyncStatus | null>(null);
 
   const apiBase = getConfiguredApiBaseOrNull();
   const configError = getConfiguredApiBaseError();
@@ -260,6 +303,30 @@ export default function App() {
       });
   });
 
+  const refreshGraphStatus = useEffectEvent(async () => {
+    if (!token || !apiBase) return;
+
+    try {
+      const client = new JamfulApiClient(apiBase, () => token);
+      const next = await client.getGraphStatus();
+      const previous = previousGraphStatusRef.current;
+      previousGraphStatusRef.current = next.status;
+      setGraphStatus(next);
+      setGraphSyncError(null);
+
+      if (
+        (previous === "queued" || previous === "running") &&
+        next.status === "succeeded"
+      ) {
+        await browser.runtime.sendMessage({ type: REFRESH_FEED_MESSAGE_TYPE });
+      }
+    } catch (error) {
+      setGraphSyncError(errorMessage(error));
+    } finally {
+      setResyncBusy(false);
+    }
+  });
+
   useEffect(() => {
     if (!loggedIn) {
       setFeed([]);
@@ -275,6 +342,25 @@ export default function App() {
     );
     return () => window.clearInterval(interval);
   }, [loggedIn, refreshFeed]);
+
+  useEffect(() => {
+    if (!loggedIn || !token || !apiBase) {
+      setGraphStatus(null);
+      setGraphSyncError(null);
+      setResyncBusy(false);
+      previousGraphStatusRef.current = null;
+      return;
+    }
+    void refreshGraphStatus();
+  }, [apiBase, loggedIn, refreshGraphStatus, token]);
+
+  useEffect(() => {
+    if (graphStatus?.status !== "queued" && graphStatus?.status !== "running") {
+      return;
+    }
+    const interval = window.setInterval(() => void refreshGraphStatus(), 3000);
+    return () => window.clearInterval(interval);
+  }, [graphStatus?.status, refreshGraphStatus]);
 
   async function handleSignIn(): Promise<void> {
     if (!apiBase) {
@@ -324,14 +410,26 @@ export default function App() {
         code_verifier: verifier,
         redirect_uri,
       });
+      const nextUsername = tokenRes.user.x_username || tokenRes.x_username;
+      const nextAvatarUrl =
+        tokenRes.avatar_url || tokenRes.user.avatar_url || avatarUrlFromAccessToken(tokenRes.access_token);
       await browser.storage.local.set({
         accessToken: tokenRes.access_token,
-        xUsername: tokenRes.x_username,
-        xAvatarUrl: tokenRes.avatar_url,
+        xUsername: nextUsername,
+        xAvatarUrl: nextAvatarUrl,
       });
       setToken(tokenRes.access_token);
-      setXUsername(tokenRes.x_username);
-      setXAvatarUrl(tokenRes.avatar_url || null);
+      setXUsername(nextUsername);
+      setXAvatarUrl(nextAvatarUrl);
+      setGraphStatus({
+        status: tokenRes.graph_sync.status,
+        last_synced_at: tokenRes.graph_sync.last_synced_at,
+        error_message: tokenRes.graph_sync.error_message,
+        active_run: null,
+        last_run: null,
+      });
+      previousGraphStatusRef.current = tokenRes.graph_sync.status;
+      setGraphSyncError(tokenRes.graph_sync.error_message);
       setFeed([]);
       setFeedFetchedAt(null);
       setFeedError(null);
@@ -353,6 +451,10 @@ export default function App() {
     setXAvatarUrl(null);
     setAuthError(null);
     setVisibilityError(null);
+    setGraphStatus(null);
+    setGraphSyncError(null);
+    setResyncBusy(false);
+    previousGraphStatusRef.current = null;
     setFeed([]);
     setFeedFetchedAt(null);
     setFeedError(null);
@@ -373,21 +475,42 @@ export default function App() {
     }
   }
 
+  async function handleResync(): Promise<void> {
+    if (!apiBase || !token) return;
+
+    setGraphSyncError(null);
+    setResyncBusy(true);
+    try {
+      const client = new JamfulApiClient(apiBase, () => token);
+      const res = await client.resyncGraph();
+      previousGraphStatusRef.current = res.status;
+      await refreshGraphStatus();
+    } catch (error) {
+      setGraphSyncError(errorMessage(error));
+      setResyncBusy(false);
+    }
+  }
+
   const playingNow =
     !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
   const showInitialFeedLoading =
     loggedIn && feed.length === 0 && feedFetchedAt == null && feedError == null;
+  const syncInFlight =
+    resyncBusy ||
+    graphStatus?.status === "queued" ||
+    graphStatus?.status === "running";
+  const visibleGraphError = graphSyncError ?? graphStatus?.error_message ?? null;
 
   if (!loggedIn) {
     return (
-      <main className="flex flex-col h-full bg-background text-foreground p-6">
-        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
-          <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
-            <Gamepad2 className="w-8 h-8 text-primary" />
+      <main className="flex h-full flex-col bg-background p-6 text-foreground">
+        <div className="flex flex-1 flex-col items-center justify-center space-y-6 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <Gamepad2 className="h-8 w-8 text-primary" />
           </div>
           <div className="space-y-2">
             <h1 className="text-2xl font-bold tracking-tight">Jamful</h1>
-            <p className="text-muted-foreground text-sm max-w-[240px] mx-auto">
+            <p className="mx-auto max-w-[240px] text-sm text-muted-foreground">
               See what games the people you follow on X are playing.
             </p>
           </div>
@@ -401,7 +524,7 @@ export default function App() {
               {loginBusy ? "Signing in..." : "Sign in with X"}
             </Button>
             {(authError || configError) && (
-              <p className="text-sm text-destructive font-medium">
+              <p className="text-sm font-medium text-destructive">
                 {authError ?? configError}
               </p>
             )}
@@ -412,15 +535,15 @@ export default function App() {
   }
 
   return (
-    <main className="flex flex-col h-full bg-background text-foreground">
-      <header className="px-3 py-2.5 flex items-center justify-between border-b border-border/50 shrink-0 bg-card">
+    <main className="flex h-full flex-col bg-background text-foreground">
+      <header className="flex shrink-0 items-center justify-between border-b border-border/50 bg-card px-3 py-2.5">
         <div className="flex items-center gap-2.5">
           <Avatar className="h-8 w-8">
             <AvatarImage
               src={xAvatarUrl ?? undefined}
               alt={xUsername ?? "User"}
             />
-            <AvatarFallback className="bg-primary/10 text-primary font-medium text-xs">
+            <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
               {xUsername ? initialsForName(xUsername) : "?"}
             </AvatarFallback>
           </Avatar>
@@ -428,10 +551,10 @@ export default function App() {
             <span className="text-xs font-semibold leading-none">
               {xUsername ? `@${xUsername}` : "User"}
             </span>
-            <span className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
+            <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <span
                 className={cn(
-                  "w-1.5 h-1.5 rounded-full shrink-0",
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
                   presenceInvisible || !playingNow
                     ? "bg-muted-foreground"
                     : "bg-green-500",
@@ -464,7 +587,7 @@ export default function App() {
               <Eye className="h-4 w-4" />
               <span>Online</span>
               {!presenceInvisible && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-green-500" />
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-green-500" />
               )}
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -474,7 +597,7 @@ export default function App() {
               <EyeOff className="h-4 w-4" />
               <span>Invisible</span>
               {presenceInvisible && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-muted-foreground" />
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-muted-foreground" />
               )}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -489,19 +612,59 @@ export default function App() {
         </DropdownMenu>
       </header>
 
-      {visibilityError && (
-        <div className="px-4 py-2 bg-destructive/10 text-destructive text-xs font-medium border-b border-destructive/20">
-          {visibilityError}
-        </div>
-      )}
-
       <ScrollArea className="flex-1">
-        <div className="p-1.5">
-          <div className="px-1.5 py-1 flex items-center justify-between mb-0.5">
-            <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="space-y-1.5 p-1.5">
+          {(visibilityError || graphStatus || visibleGraphError) && (
+            <section className="space-y-1.5 px-1.5 pt-1">
+              {visibilityError && (
+                <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+                  {visibilityError}
+                </div>
+              )}
+              <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Follow graph
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">
+                      {graphStatus
+                        ? graphStatusHeadline(graphStatus.status)
+                        : "Checking sync status"}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                      {graphStatus
+                        ? graphStatus.status === "succeeded" &&
+                          graphStatus.last_synced_at != null
+                          ? `Last synced ${formatTimestamp(graphStatus.last_synced_at)}`
+                          : graphStatusCopy(graphStatus.status)
+                        : "Loading your sync state from the API."}
+                    </p>
+                    {visibleGraphError && (
+                      <p className="mt-1.5 text-[11px] leading-4 text-destructive">
+                        {visibleGraphError}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 shrink-0"
+                    onClick={() => void handleResync()}
+                    disabled={!apiBase || syncInFlight}
+                  >
+                    {syncInFlight ? "Syncing..." : "Resync"}
+                  </Button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <div className="mb-0.5 flex items-center justify-between px-1.5 py-1">
+            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               People you follow
             </h2>
-            <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-px rounded-sm">
+            <span className="rounded-sm bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">
               {feed.length}
             </span>
           </div>
@@ -516,19 +679,26 @@ export default function App() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                <Gamepad2 className="w-6 h-6 text-muted-foreground/50" />
+            <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Gamepad2 className="h-6 w-6 text-muted-foreground/50" />
               </div>
               <p className="text-sm font-medium text-foreground">
                 {showInitialFeedLoading
                   ? "Loading list..."
-                  : "Nobody is playing right now"}
+                  : syncInFlight
+                    ? "Syncing follows..."
+                    : "Nobody is playing right now"}
+              </p>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {syncInFlight
+                  ? "New matches will appear after the follow graph refresh finishes."
+                  : "Open the popup later to check again."}
               </p>
             </div>
           )}
           {feedError && (
-            <p className="text-xs text-destructive text-center mt-4 px-4">
+            <p className="mt-4 px-4 text-center text-xs text-destructive">
               {feedError}
             </p>
           )}

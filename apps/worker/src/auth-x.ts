@@ -26,6 +26,46 @@ const X_API_HEADERS = {
   "User-Agent": "JamfulWorker/1.0",
 } as const;
 
+async function requestXToken(
+  clientId: string,
+  clientSecret: string | undefined,
+  body: URLSearchParams,
+): Promise<{
+  access_token: string;
+  refresh_token?: string;
+  scope?: string;
+}> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  const secret = clientSecret?.trim();
+  if (secret) {
+    headers.Authorization = `Basic ${btoa(`${clientId}:${secret}`)}`;
+  }
+  const res = await fetch(X_TOKEN_URL, {
+    method: "POST",
+    headers,
+    body,
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(text || String(res.status));
+  }
+  const json = JSON.parse(text) as {
+    access_token?: string;
+    refresh_token?: string;
+    scope?: string;
+  };
+  if (!json.access_token) {
+    throw new Error(text || "missing access_token");
+  }
+  return {
+    access_token: json.access_token,
+    refresh_token: json.refresh_token,
+    scope: json.scope,
+  };
+}
+
 export function isAllowedExtensionRedirectUri(redirectUri: string): boolean {
   try {
     const u = new URL(redirectUri);
@@ -74,36 +114,24 @@ export async function exchangeXAuthorizationCode(
     code_verifier: input.codeVerifier,
     client_id: clientId,
   });
-  const headers: Record<string, string> = {
-    "Content-Type": "application/x-www-form-urlencoded",
-  };
-  const secret = clientSecret?.trim();
-  if (secret) {
-    headers.Authorization = `Basic ${btoa(`${clientId}:${secret}`)}`;
-  }
-  const res = await fetch(X_TOKEN_URL, {
-    method: "POST",
-    headers,
-    body,
+  return requestXToken(clientId, clientSecret, body);
+}
+
+export async function refreshXAccessToken(
+  clientId: string,
+  clientSecret: string | undefined,
+  refreshToken: string,
+): Promise<{
+  access_token: string;
+  refresh_token?: string;
+  scope?: string;
+}> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: clientId,
   });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(text || String(res.status));
-  }
-  const json = JSON.parse(text) as {
-    access_token?: string;
-    refresh_token?: string;
-    scope?: string;
-    token_type?: string;
-  };
-  if (!json.access_token) {
-    throw new Error(text);
-  }
-  return {
-    access_token: json.access_token,
-    refresh_token: json.refresh_token,
-    scope: json.scope,
-  };
+  return requestXToken(clientId, clientSecret, body);
 }
 
 export type XUser = {
@@ -161,11 +189,13 @@ export async function fetchXFollowingUserIds(
   accessToken: string,
   xUserId: string,
   xApiBase: string,
-  maxPages = 5,
+  maxPages = Number.POSITIVE_INFINITY,
 ): Promise<string[]> {
   const ids: string[] = [];
   let token: string | undefined;
-  for (let page = 0; page < maxPages; page++) {
+  let page = 0;
+  while (page < maxPages) {
+    page += 1;
     const u = new URL(
       `${xApiBase}/users/${encodeURIComponent(xUserId)}/following`,
     );
