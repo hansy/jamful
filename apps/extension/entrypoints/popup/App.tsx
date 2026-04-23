@@ -22,6 +22,20 @@ import {
 } from "../../lib/self-presence";
 import { createPkcePair } from "./pkce";
 
+import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar";
+import { Button } from "../../components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
+import { ScrollArea } from "../../components/ui/scroll-area";
+import { Separator } from "../../components/ui/separator";
+import { ChevronDown, LogOut, Eye, EyeOff, Gamepad2, Play, ExternalLink } from "lucide-react";
+import { cn } from "../../lib/utils";
+
 const FEED_REFRESH_MS = 60_000;
 
 function errorMessage(error: unknown): string {
@@ -38,62 +52,47 @@ function initialsForName(name: string): string {
   return initials || "?";
 }
 
-function FriendAvatar({ name, avatarUrl }: { name: string; avatarUrl: string }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const showImage = avatarUrl.length > 0 && !imageFailed;
-
-  if (showImage) {
-    return <img src={avatarUrl} alt="" onError={() => setImageFailed(true)} />;
-  }
-
-  return <span aria-hidden="true">{initialsForName(name)}</span>;
-}
-
 function FriendRow({ entry }: { entry: FeedEntry }) {
   const gameName = entry.game.name || "Unknown game";
 
   return (
-    <li>
-      <FriendAvatar name={entry.friend.name} avatarUrl={entry.friend.avatar_url} />
-      <div>
-        <p>{entry.friend.name}</p>
-        <p>Playing {gameName}</p>
+    <div className="flex items-center gap-2.5 px-2 py-1.5 hover:bg-accent/50 transition-colors group rounded-md">
+      <div className="relative shrink-0">
+        <Avatar className="h-7 w-7 border border-border/50">
+          <AvatarImage src={entry.friend.avatar_url} alt={entry.friend.name} />
+          <AvatarFallback className="bg-muted text-muted-foreground text-[10px]">
+            {initialsForName(entry.friend.name)}
+          </AvatarFallback>
+        </Avatar>
+        {entry.game.icon_url && (
+          <img 
+            src={entry.game.icon_url} 
+            alt={gameName} 
+            className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-sm border border-background bg-background object-cover" 
+          />
+        )}
       </div>
-      <button
-        type="button"
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-xs font-medium leading-none truncate">
+            {entry.friend.name}
+          </p>
+        </div>
+        <p className="text-[10px] text-muted-foreground truncate mt-0.5 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+          <span className="truncate">Playing <span className="font-medium text-foreground">{gameName}</span></span>
+        </p>
+      </div>
+      <Button
+        variant="secondary"
+        size="icon"
+        className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
         onClick={() => void browser.tabs.create({ url: entry.game.url, active: true })}
+        title={`Join ${entry.friend.name} in ${gameName}`}
       >
-        Open
-      </button>
-    </li>
-  );
-}
-
-function PresenceSummary({
-  selfPresence,
-  presenceInvisible,
-}: {
-  selfPresence: PopupSelfPresence;
-  presenceInvisible: boolean;
-}) {
-  const playingNow = !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
-  const status = presenceInvisible
-    ? "Invisible mode"
-    : playingNow
-      ? "Playing now"
-      : "Not playing right now";
-
-  return (
-    <section>
-      <p>{status}</p>
-      <p>
-        {presenceInvisible
-          ? "Your game activity is hidden until you turn visibility back on."
-          : playingNow && selfPresence.gameName
-            ? `You're currently in ${selfPresence.gameName}.`
-            : "Open a supported game tab and Jamful will share your presence after a short moment."}
-      </p>
-    </section>
+        <Play className="h-3 w-3 ml-0.5" />
+      </Button>
+    </div>
   );
 }
 
@@ -321,100 +320,154 @@ export default function App() {
     }
   }
 
-  return (
-    <main>
-      <header>
-        <p>Jamful</p>
-        <div>
-          <h1>{loggedIn ? "Friends playing now" : "See who's playing"}</h1>
-          {loggedIn && (
-            <label>
-              <input
-                type="checkbox"
-                checked={presenceInvisible}
-                onChange={(event) =>
-                  void handlePresenceInvisibleChange(event.currentTarget.checked)
-                }
-              />
-              {presenceInvisible ? " Invisible" : " Visible"}
-            </label>
-          )}
+  const playingNow = !presenceInvisible && isPopupSelfPresenceFresh(selfPresence);
+
+  if (!loggedIn) {
+    return (
+      <main className="flex flex-col h-full bg-background text-foreground p-6">
+        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
+          <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
+            <Gamepad2 className="w-8 h-8 text-primary" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight">Jamful</h1>
+            <p className="text-muted-foreground text-sm max-w-[240px] mx-auto">
+              See what your friends are playing and join them instantly.
+            </p>
+          </div>
+          <div className="w-full space-y-3 pt-4">
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={() => void handleSignIn()}
+              disabled={loginBusy || !apiBase}
+            >
+              {loginBusy ? "Signing in..." : "Sign in with X"}
+            </Button>
+            {(authError || configError) && (
+              <p className="text-sm text-destructive font-medium">
+                {authError ?? configError}
+              </p>
+            )}
+          </div>
         </div>
-        {loggedIn && (
-          <p>
-            {presenceInvisible
-              ? "Invisible: your game activity is not shared."
-              : "Visible: game activity can be shared with friends."}
-          </p>
-        )}
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex flex-col h-full bg-background text-foreground">
+      <header className="px-3 py-2.5 flex items-center justify-between border-b border-border/50 shrink-0 bg-card">
+        <div className="flex items-center gap-2.5">
+          <Avatar className="h-8 w-8 border border-border/50">
+            <AvatarFallback className="bg-primary/10 text-primary font-medium text-xs">
+              {xUsername ? initialsForName(xUsername) : "?"}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col">
+            <span className="text-xs font-semibold leading-none">
+              {xUsername ? `@${xUsername}` : "User"}
+            </span>
+            <span className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full shrink-0",
+                  presenceInvisible || !playingNow ? "bg-muted-foreground" : "bg-green-500"
+                )}
+              />
+              {presenceInvisible 
+                ? "Invisible" 
+                : playingNow && selfPresence.gameName 
+                  ? `Playing ${selfPresence.gameName}`
+                  : "Not playing anything"}
+            </span>
+          </div>
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full">
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem
+              onClick={() => void handlePresenceInvisibleChange(false)}
+              className="gap-2"
+            >
+              <Eye className="h-4 w-4" />
+              <span>Online</span>
+              {!presenceInvisible && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-green-500" />
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void handlePresenceInvisibleChange(true)}
+              className="gap-2"
+            >
+              <EyeOff className="h-4 w-4" />
+              <span>Invisible</span>
+              {presenceInvisible && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-muted-foreground" />
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => void handleSignOut()} className="gap-2 text-destructive focus:text-destructive">
+              <LogOut className="h-4 w-4" />
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
-      {!loggedIn ? (
-        <section>
-          <p>
-            Sign in with X to see friends who are active in supported web games.
-          </p>
-          <button
-            type="button"
-            onClick={() => void handleSignIn()}
-            disabled={loginBusy || !apiBase}
-          >
-            {loginBusy ? "Signing in..." : "Sign in with X"}
-          </button>
-          {(authError || configError) && (
-            <p>{authError ?? configError}</p>
-          )}
-        </section>
-      ) : (
-        <>
-          <section aria-label="Account status">
-            <div>
-              <div>
-                <p>Authentication</p>
-                <p>
-                  Signed in{xUsername ? ` as @${xUsername}` : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleSignOut()}
-              >
-                Sign out
-              </button>
-            </div>
-            <PresenceSummary
-              selfPresence={selfPresence}
-              presenceInvisible={presenceInvisible}
-            />
-            {visibilityError && <p>{visibilityError}</p>}
-          </section>
-
-          <section aria-label="Friends playing now">
-            <div>
-              <p>Friends</p>
-              <p>{feed.length === 1 ? "1 active" : `${feed.length} active`}</p>
-            </div>
-
-            {feed.length > 0 ? (
-              <ul>
-                {feed.map((entry) => (
-                  <FriendRow
-                    key={`${entry.session_id}:${entry.friend.name}:${entry.game.url}`}
-                    entry={entry}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <div>
-                <p>{feedLoading ? "Loading friends..." : "No friends are playing right now."}</p>
-                <p>Open the popup later or start a game so friends can jump in.</p>
-              </div>
-            )}
-
-            {feedError && <p>{feedError}</p>}
-          </section>
-        </>
+      {visibilityError && (
+        <div className="px-4 py-2 bg-destructive/10 text-destructive text-xs font-medium border-b border-destructive/20">
+          {visibilityError}
+        </div>
       )}
+
+      <ScrollArea className="flex-1">
+        <div className="p-1.5">
+          <div className="px-1.5 py-1 flex items-center justify-between mb-0.5">
+            <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Friends Playing
+            </h2>
+            <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-px rounded-sm">
+              {feed.length}
+            </span>
+          </div>
+
+          {feed.length > 0 ? (
+            <div className="flex flex-col gap-0.5">
+              {feed.map((entry) => (
+                <FriendRow
+                  key={`${entry.session_id}:${entry.friend.name}:${entry.game.url}`}
+                  entry={entry}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                <Gamepad2 className="w-6 h-6 text-muted-foreground/50" />
+              </div>
+              <p className="text-sm font-medium text-foreground">
+                {feedLoading ? "Loading friends..." : "No friends playing"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
+                {feedLoading
+                  ? "Fetching latest activity"
+                  : "When your friends start playing, they'll appear here."}
+              </p>
+            </div>
+          )}
+          {feedError && (
+            <p className="text-xs text-destructive text-center mt-4 px-4">
+              {feedError}
+            </p>
+          )}
+        </div>
+      </ScrollArea>
     </main>
   );
 }
