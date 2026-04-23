@@ -4,10 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run dev:setup && bun run migrate:local && wrangler dev --env-file .env.local",
+    "dev": "bun run dev:setup && bun run migrate:local && wrangler dev",
     "dev:setup": "bun ./scripts/dev-setup.ts",
-    "migrate:local": "wrangler d1 migrations apply jamful --local",
-    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run",
+    "build:production": "wrangler deploy --dry-run --env-file .env.production",
+    "migrate:local": "wrangler d1 migrations apply JAMFUL_D1 --local",
+    "migrate:production": "wrangler d1 migrations apply JAMFUL_D1 --remote",
+    "deploy:production": "wrangler deploy --env-file .env.production",
+    "deploy": "bun run build:production && bun run migrate:production && bun run deploy:production",
     "cf-types": "wrangler types",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
