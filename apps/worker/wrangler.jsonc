@@ -40,4 +40,10 @@
       "new_sqlite_classes": ["UserPresenceDO"],
     },
   ],
+  "routes": [
+    {
+      "pattern": "api.jamful.social",
+      "custom_domain": true,
+    },
+  ],
 }
