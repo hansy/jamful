@@ -1,9 +1,9 @@
-export const DEFAULT_DEV_API_BASE_URL = "http://127.0.0.1:8787";
+export const DEFAULT_DEV_API_BASE_URL = "https://api.jamful.localhost";
 
 type ApiBaseMode = "development" | "production";
 
 function invalidApiBaseMessage(value: string): string {
-  return `Invalid WXT_API_BASE_URL "${value}". Expected an absolute http(s) URL such as https://api.example.com.`;
+  return `Invalid WXT_API_BASE_URL "${value}". Expected an absolute http(s) URL such as https://api.example.com or https://api.jamful.localhost.`;
 }
 
 function isLocalHostname(hostname: string): boolean {
@@ -12,7 +12,8 @@ function isLocalHostname(hostname: string): boolean {
     normalized === "localhost" ||
     normalized === "127.0.0.1" ||
     normalized === "::1" ||
-    normalized === "[::1]"
+    normalized === "[::1]" ||
+    normalized.endsWith(".localhost")
   );
 }
 
@@ -57,5 +58,5 @@ export function normalizeApiBase(
 
 export function apiHostPermissionPattern(apiBase: string): string {
   const url = new URL(apiBase);
-  return `${url.protocol}//${url.host}/*`;
+  return `${url.protocol}//${url.hostname}/*`;
 }

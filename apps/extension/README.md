@@ -11,8 +11,9 @@ bun run dev:worker
 This now bootstraps local Worker dev automatically: it creates `apps/worker/.env.local`
 from `apps/worker/.env.example` if needed, fills in local-only defaults for
 `JWT_SECRET` and `X_REFRESH_TOKEN_ENC_KEY`, and applies local D1 migrations before
-starting `wrangler dev`. You still need to set `X_CLIENT_ID` in `apps/worker/.env.local`,
-and `X_CLIENT_SECRET` if your X app requires it.
+starting `wrangler dev` through Portless at **`https://api.jamful.localhost`**. You
+still need to set `X_CLIENT_ID` in `apps/worker/.env.local`, and `X_CLIENT_SECRET`
+if your X app requires it.
 
 ## Load unpacked in Chrome (dev)
 
@@ -22,7 +23,7 @@ and `X_CLIENT_SECRET` if your X app requires it.
    cp apps/extension/.env.example apps/extension/.env.local
    ```
 
-   If no env file is present, the extension uses the local-dev default `http://127.0.0.1:8787`.
+   If no env file is present, the extension uses the local-dev default `https://api.jamful.localhost`.
 
 2. From the repo root (or `apps/extension`), start the dev build:
 
@@ -54,13 +55,15 @@ Production builds use **`bun run build`** and output **`apps/extension/.output/c
 
 ## API base URL
 
-Development defaults to `http://127.0.0.1:8787`. To point dev at a deployed worker, create `apps/extension/.env.local` and set:
+Development defaults to `https://api.jamful.localhost`. To point dev at another API, create `apps/extension/.env.local` and set:
 
 ```bash
 WXT_API_BASE_URL=https://api.jamful.social
 ```
 
 Restart the WXT dev/build process after changing this value, then reload the unpacked extension in Chrome. The configured API origin is also added to `host_permissions` during manifest generation.
+
+If you later add a local website app outside this extension workspace, use the same hostname pattern there too, for example `portless website.jamful <site-dev-command>`.
 
 ## Production builds
 
@@ -84,7 +87,7 @@ Or inject it directly in CI:
 WXT_API_BASE_URL=https://api.jamful.social bun run build:extension
 ```
 
-`http://`, `localhost`, and `127.0.0.1` are rejected for production builds.
+`http://`, `localhost`, `127.0.0.1`, and `*.localhost` are rejected for production builds.
 
 ## Background feed and toolbar flow
 

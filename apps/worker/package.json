@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run dev:setup && bun run migrate:local && wrangler dev",
+    "dev": "bun run dev:setup && bun run migrate:local && portless api.jamful wrangler dev",
     "dev:setup": "bun ./scripts/dev-setup.ts",
     "build": "wrangler deploy --dry-run",
     "build:production": "wrangler deploy --dry-run --secrets-file .env.production",
@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "portless": "^0.10.3",
     "typescript": "^5.7.0",
     "wrangler": "^4.28.0"
   }
