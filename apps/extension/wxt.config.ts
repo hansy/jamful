@@ -10,7 +10,9 @@ const repoRoot = join(extensionRoot, "..", "..");
 
 function loadApiBase(mode: string): string {
   const env = loadEnv(mode, extensionRoot, ["WXT_"]);
-  return normalizeApiBase(env.WXT_API_BASE_URL);
+  return normalizeApiBase(env.WXT_API_BASE_URL, {
+    mode: mode === "production" ? "production" : "development",
+  });
 }
 
 /**

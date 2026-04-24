@@ -22,7 +22,7 @@ and `X_CLIENT_SECRET` if your X app requires it.
    cp apps/extension/.env.example apps/extension/.env.local
    ```
 
-   If no env file is present, the extension uses the committed local-dev default `http://127.0.0.1:8787`. Set `WXT_API_BASE_URL` only when you want a deployed worker URL.
+   If no env file is present, the extension uses the local-dev default `http://127.0.0.1:8787`.
 
 2. From the repo root (or `apps/extension`), start the dev build:
 
@@ -54,13 +54,37 @@ Production builds use **`bun run build`** and output **`apps/extension/.output/c
 
 ## API base URL
 
-The extension uses `http://127.0.0.1:8787` by default. To point it at a deployed worker, create `apps/extension/.env.local` and set:
+Development defaults to `http://127.0.0.1:8787`. To point dev at a deployed worker, create `apps/extension/.env.local` and set:
 
 ```bash
-WXT_API_BASE_URL=https://your-worker.example.com
+WXT_API_BASE_URL=https://api.jamful.social
 ```
 
 Restart the WXT dev/build process after changing this value, then reload the unpacked extension in Chrome. The configured API origin is also added to `host_permissions` during manifest generation.
+
+## Production builds
+
+Production builds now fail closed unless `WXT_API_BASE_URL` is explicitly set to a non-local `https://` origin.
+
+Use one of these paths:
+
+```bash
+cp apps/extension/.env.production.example apps/extension/.env.production
+```
+
+Then set:
+
+```bash
+WXT_API_BASE_URL=https://api.jamful.social
+```
+
+Or inject it directly in CI:
+
+```bash
+WXT_API_BASE_URL=https://api.jamful.social bun run build:extension
+```
+
+`http://`, `localhost`, and `127.0.0.1` are rejected for production builds.
 
 ## Background feed and toolbar flow
 
