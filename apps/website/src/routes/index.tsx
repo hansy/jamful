@@ -52,10 +52,7 @@ const faqs = [
     answer: (
       <>
         Only games submitted through{" "}
-        <a
-          className="underline underline-offset-4"
-          href="https://vibej.am/2026"
-        >
+        <a className="underline underline-offset-4" href="https://vibej.am">
           Vibe Jam 2026
         </a>
         .
@@ -83,12 +80,6 @@ function Home() {
   return (
     <main className="min-h-screen">
       <SiteHeader>
-        <a
-          className={cn(buttonVariants({ variant: "ghost" }))}
-          href="#extension"
-        >
-          Extension
-        </a>
         <Button>
           <Plus data-icon="inline-start" />
           Add extension
@@ -114,7 +105,7 @@ function Home() {
             </Button>
             <a
               className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
-              href="https://vibej.am/2026"
+              href="https://vibej.am"
             >
               Vibe Jam 2026
               <ExternalLink data-icon="inline-end" />

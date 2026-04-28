@@ -1,11 +1,11 @@
-import type { ReactNode } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import type { ReactNode } from "react";
+import { createFileRoute } from "@tanstack/react-router";
 
-import { SiteFooter } from "#/components/site-footer"
-import { SiteHeader } from "#/components/site-header"
-import { Separator } from "#/components/ui/separator"
+import { SiteFooter } from "#/components/site-footer";
+import { SiteHeader } from "#/components/site-header";
+import { Separator } from "#/components/ui/separator";
 
-export const Route = createFileRoute("/tos")({ component: TermsPage })
+export const Route = createFileRoute("/tos")({ component: TermsPage });
 
 function TermsPage() {
   return (
@@ -14,8 +14,12 @@ function TermsPage() {
 
       <article className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 py-16">
         <div className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">Last updated April 28, 2026</p>
-          <h1 className="text-4xl font-semibold tracking-tight">Terms of Service</h1>
+          <p className="text-sm text-muted-foreground">
+            Last updated April 28, 2026
+          </p>
+          <h1 className="text-4xl font-semibold tracking-tight">
+            Terms of Service
+          </h1>
           <p className="text-lg leading-8 text-muted-foreground">
             These terms describe the basic rules for using Jamful, a browser
             extension and API for sharing current web-game activity.
@@ -36,9 +40,9 @@ function TermsPage() {
 
         <TermsSection title="Supported games and third-party services">
           <p>
-            Jamful only detects games from its supported game registry, currently
-            games submitted through{" "}
-            <a className="underline underline-offset-4" href="https://vibej.am/2026">
+            Jamful only detects games from its supported game registry,
+            currently games submitted through{" "}
+            <a className="underline underline-offset-4" href="https://vibej.am">
               Vibe Jam 2026
             </a>
             .
@@ -76,7 +80,10 @@ function TermsPage() {
         <TermsSection title="Contact">
           <p>
             Questions or feedback can be sent to{" "}
-            <a className="underline underline-offset-4" href="mailto:feedback@jamful.social">
+            <a
+              className="underline underline-offset-4"
+              href="mailto:feedback@jamful.social"
+            >
               feedback@jamful.social
             </a>
             .
@@ -86,21 +93,23 @@ function TermsPage() {
 
       <SiteFooter maxWidth="max-w-4xl" />
     </main>
-  )
+  );
 }
 
 function TermsSection({
   title,
   children,
 }: {
-  title: string
-  children: ReactNode
+  title: string;
+  children: ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-4">
       <Separator />
       <h2 className="text-xl font-semibold">{title}</h2>
-      <div className="flex flex-col gap-4 leading-7 text-muted-foreground">{children}</div>
+      <div className="flex flex-col gap-4 leading-7 text-muted-foreground">
+        {children}
+      </div>
     </section>
-  )
+  );
 }
