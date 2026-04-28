@@ -51,6 +51,12 @@ if your X app requires it.
 
 Production builds use **`bun run build`** and output **`apps/extension/.output/chrome-mv3`** (no `-dev`).
 
+Chrome Web Store upload zips can be built from the repo root with:
+
+```bash
+WXT_API_BASE_URL=https://api.jamful.social bun run zip:extension
+```
+
 **Vite:** this package pins **`vite@^6.3.4`** so dev uses Vite 6.
 
 ## Chrome Web Store assets
