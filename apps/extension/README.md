@@ -53,6 +53,20 @@ Production builds use **`bun run build`** and output **`apps/extension/.output/c
 
 **Vite:** this package pins **`vite@^6.3.4`** so dev uses Vite 6.
 
+## Chrome Web Store assets
+
+Store copy lives in `apps/extension/store/listing.json`, with product-level
+strings shared from `packages/shared/src/index.ts`. Brand and store images are
+generated from the same source artwork:
+
+```bash
+bun run assets:brand
+```
+
+That command refreshes the extension icons in `apps/extension/public/icon`, the
+website favicon and social image in `apps/website/public`, and Chrome Store
+draft assets in `apps/extension/store`.
+
 ## API base URL
 
 Development defaults to `https://api.jamful.localhost`. To point dev at another API, create `apps/extension/.env.local` and set:

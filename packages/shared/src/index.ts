@@ -1,4 +1,29 @@
 /** Game row synced to KV and returned to authenticated clients */
+export const PRODUCT_METADATA = {
+  name: "Jamful",
+  shortName: "jamful",
+  siteUrl: "https://jamful.social",
+  description:
+    "See what games the people you follow are playing and jump in from your browser.",
+  chromeStoreSummary: "See when people you follow are playing supported web games.",
+  repositoryUrl: "https://github.com/hansy/jamful",
+  feedbackEmail: "feedback@jamful.social",
+  socialImagePath: "/social-image.png",
+  extensionPreviewPath: "/extension-preview.png",
+  faviconPath: "/favicon.png",
+  themeColor: "#09090b",
+  chromeStore: {
+    category: "Social & Communication",
+    language: "en-US",
+    singlePurpose:
+      "Jamful shows when people you follow are playing supported Vibe Jam web games.",
+    permissions:
+      "Jamful uses read-only X sign-in to identify your account, extension storage to keep your session, and tab access only to detect supported game sites from the bundled allowlist.",
+    privacy:
+      "Jamful does not track browsing history and does not broadcast every site you visit. The extension only recognizes websites in the bundled game allowlist.",
+  },
+} as const;
+
 export type Game = {
   id: string;
   name: string;

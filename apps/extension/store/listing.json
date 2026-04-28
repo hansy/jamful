@@ -1,0 +1,19 @@
+{
+  "name": "Jamful",
+  "summary": "See when people you follow are playing supported web games.",
+  "description": "Jamful turns your browser into a game activity feed for supported Vibe Jam games. Sign in with X, find people who have installed Jamful, and see when they are playing games from the bundled allowlist. Jamful does not track browsing history and does not broadcast every site you visit.",
+  "category": "Social & Communication",
+  "language": "en-US",
+  "website": "https://jamful.social",
+  "support_email": "feedback@jamful.social",
+  "privacy_policy": "https://jamful.social/privacy",
+  "terms_of_service": "https://jamful.social/tos",
+  "single_purpose": "Jamful shows when people you follow are playing supported Vibe Jam web games.",
+  "permissions_explanation": "Jamful uses read-only X sign-in to identify your account, extension storage to keep your session, and tab access only to detect supported game sites from the bundled allowlist.",
+  "privacy_explanation": "Jamful does not track browsing history and does not broadcast every site you visit. The extension only recognizes websites in the bundled game allowlist.",
+  "assets": {
+    "icon_128": "public/icon/128.png",
+    "screenshot_1": "store/screenshot-1.png",
+    "small_promo_tile": "store/promo-small.png"
+  }
+}

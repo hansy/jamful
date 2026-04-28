@@ -14,7 +14,9 @@
     "build:worker": "bun run --cwd apps/worker build",
     "build:production": "bun run --cwd apps/worker build:production && bun run build:extension",
     "build:extension": "bun run --cwd apps/extension build",
+    "zip:extension": "bun run --cwd apps/extension zip",
     "deploy:worker": "bun run --cwd apps/worker deploy",
+    "assets:brand": "bun scripts/generate-brand-assets.ts",
     "registry": "bun scripts/build-registry.ts",
     "dev:worker": "bun run --cwd apps/worker dev",
     "dev:website": "bun run --cwd apps/website dev",
@@ -23,6 +25,7 @@
     "cf-types": "bun run --cwd apps/worker cf-types"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
   }

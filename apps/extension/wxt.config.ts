@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 import { loadEnv } from "vite";
+import { PRODUCT_METADATA } from "@jamful/shared";
 import { apiHostPermissionPattern, normalizeApiBase } from "./lib/api-base";
 
 const extensionRoot = dirname(fileURLToPath(import.meta.url));
@@ -35,8 +36,9 @@ export default defineConfig({
   manifest: (env) => {
     const apiBase = loadApiBase(env.mode);
     return {
-      name: "Jamful",
-      description: "See when friends are playing web games.",
+      name: PRODUCT_METADATA.name,
+      short_name: PRODUCT_METADATA.shortName,
+      description: PRODUCT_METADATA.chromeStoreSummary,
       action: {
         default_icon: {
           "16": "icon/16.png",
