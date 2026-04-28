@@ -8,7 +8,10 @@ import {
   coercePopupFeedCache,
   emptyPopupFeedCache,
 } from "../../lib/feed-cache";
-import { DEV_MOCK_FEED_ENTRIES } from "../../lib/dev-mock-feed";
+import {
+  DEV_MOCK_CURRENT_USER_PRESENCE,
+  DEV_MOCK_FEED_ENTRIES,
+} from "../../lib/dev-mock-feed";
 import {
   getConfiguredApiBaseError,
   getConfiguredApiBaseOrNull,
@@ -183,8 +186,7 @@ const DEV_MOCK_DIRECTORY_USERS: DirectoryUser[] = [
     id: "mock_user_laxbrownie",
     x_username: "laxbrownie",
     name: "Hans",
-    avatar_url:
-      "https://pbs.twimg.com/profile_images/1996831016720486400/vycHz0uG_normal.jpg",
+    avatar_url: DEV_MOCK_CURRENT_USER_PRESENCE.user.avatar_url,
     is_following: false,
   },
   {
