@@ -1,5 +1,5 @@
 /**
- * Maps data/seedGames.json → bundled registry payload (games array + updated_at).
+ * Maps data/games.json → bundled registry payload (games array + updated_at).
  * Run: bun scripts/build-registry.ts
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -15,7 +15,7 @@ type SeedRow = {
 const root = fileURLToPath(new URL("..", import.meta.url));
 
 async function main(): Promise<void> {
-  const raw = await readFile(join(root, "data/seedGames.json"), "utf-8");
+  const raw = await readFile(join(root, "data/games.json"), "utf-8");
   const rows = JSON.parse(raw) as SeedRow[];
   const games = rows.map((row) => ({
     id: row.game_host,

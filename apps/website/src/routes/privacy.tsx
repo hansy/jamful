@@ -66,7 +66,7 @@ function PrivacyPage() {
             presence activity. You can inspect the current bundled list on{" "}
             <a
               className="underline underline-offset-4"
-              href="https://github.com/hansy/jamful/blob/main/data/registry.v1.json"
+              href="https://github.com/hansy/jamful/blob/main/data/games.json"
             >
               GitHub
             </a>

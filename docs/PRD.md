@@ -284,7 +284,7 @@ Flow:
     - Materializes current presence state for feed reads
 
 - **Bundled registry data**
-  - Game registry (id, name, url, icon_url) — populated from repo `data/seedGames.json` via `scripts/build-registry.ts` into `data/registry.v1.json`
+  - Game registry (id, name, url, icon_url) — populated from repo `data/games.json` via `scripts/build-registry.ts` into `data/registry.v1.json`
   - Optional: feature flags / config
   - Read-heavy, low-latency global access
 
@@ -338,7 +338,7 @@ Session {
 ### Registry
 
 - Authenticated `GET /games` (not a public anonymous catalog in v0)
-- Registry JSON is built from `data/seedGames.json` into `data/registry.v1.json`; extension and worker both bundle that file locally
+- Registry JSON is built from `data/games.json` into `data/registry.v1.json`; extension and worker both bundle that file locally
 
 ### Presence
 
@@ -504,7 +504,7 @@ repo/
 ### Must Have
 
 - Auth (X OAuth 2.0 with PKCE)
-- Bundled game registry (from `data/seedGames.json` → `data/registry.v1.json`)
+- Bundled game registry (from `data/games.json` → `data/registry.v1.json`)
 - URL detection
 - Heartbeat (60s)
 - `UserPresenceDO`
