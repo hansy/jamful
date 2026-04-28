@@ -57,6 +57,22 @@ Chrome Web Store upload zips can be built from the repo root with:
 WXT_API_BASE_URL=https://api.jamful.social bun run zip:extension
 ```
 
+Firefox Add-ons upload zips can be built with:
+
+```bash
+WXT_API_BASE_URL=https://api.jamful.social bun run zip:extension:firefox
+```
+
+WXT can also build the Safari web extension files:
+
+```bash
+WXT_API_BASE_URL=https://api.jamful.social bun run build:extension:safari
+```
+
+Safari still requires an Xcode Safari Web Extension app wrapper and App Store
+Connect submission. The WXT output is the web extension source used by that
+Apple packaging flow, not the final App Store upload.
+
 **Vite:** this package pins **`vite@^6.3.4`** so dev uses Vite 6.
 
 ## Chrome Web Store assets

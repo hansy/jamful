@@ -50,3 +50,16 @@ the upload zip:
 ```bash
 WXT_API_BASE_URL=https://api.jamful.social bun run zip:extension
 ```
+
+Firefox uses a separate package:
+
+```bash
+WXT_API_BASE_URL=https://api.jamful.social bun run zip:extension:firefox
+```
+
+Safari can be built with WXT, but publishing requires Apple's Xcode Safari Web
+Extension wrapper and App Store Connect flow:
+
+```bash
+WXT_API_BASE_URL=https://api.jamful.social bun run build:extension:safari
+```

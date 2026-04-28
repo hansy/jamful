@@ -35,7 +35,7 @@ export default defineConfig({
   },
   manifest: (env) => {
     const apiBase = loadApiBase(env.mode);
-    return {
+    const manifest = {
       name: PRODUCT_METADATA.name,
       short_name: PRODUCT_METADATA.shortName,
       description: PRODUCT_METADATA.chromeStoreSummary,
@@ -57,6 +57,30 @@ export default defineConfig({
       permissions: ["storage", "identity", "tabs", "alarms"],
       host_permissions: [apiHostPermissionPattern(apiBase)],
     };
+
+    if (env.browser === "firefox") {
+      return {
+        ...manifest,
+        browser_specific_settings: {
+          gecko: {
+            id: "extension@jamful.social",
+            strict_min_version: "140.0",
+            data_collection_permissions: {
+              required: [
+                "personallyIdentifyingInfo",
+                "authenticationInfo",
+                "browsingActivity",
+              ],
+            },
+          },
+          gecko_android: {
+            strict_min_version: "142.0",
+          },
+        },
+      };
+    }
+
+    return manifest;
   },
   vite: () => ({
     plugins: [tailwindcss()],

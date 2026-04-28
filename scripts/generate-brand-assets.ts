@@ -153,10 +153,30 @@ function socialSvg(
   </svg>`;
 }
 
+function promoSmallSvg(
+  width = 440,
+  height = 280,
+  avatarSources: AvatarSources = {},
+) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+    <style>
+      * { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    </style>
+    <rect width="${width}" height="${height}" fill="${black}"/>
+    <circle cx="390" cy="40" r="125" fill="#7c2d12" opacity=".24"/>
+    <circle cx="35" cy="265" r="125" fill="#3f1d0b" opacity=".28"/>
+    <text x="28" y="50" font-size="25" font-weight="850" fill="${amber}">jamful</text>
+    <text x="28" y="108" font-size="29" font-weight="850" fill="#fafafa">See games</text>
+    <text x="28" y="143" font-size="29" font-weight="850" fill="#fafafa">friends play.</text>
+    <text x="30" y="194" font-size="14" font-weight="500" fill="${muted}">A browser activity feed for web games.</text>
+    <svg x="292" y="78" width="132" height="145" viewBox="0 0 720 560">${svgBody(browserGraphicSvg(720, 560, avatarSources))}</svg>
+  </svg>`;
+}
+
 async function svgToPng(svg: string, outPath: string, width?: number, height?: number) {
   let image = sharp(Buffer.from(svg));
   if (width || height) image = image.resize(width, height);
-  await image.png().toFile(outPath);
+  await image.flatten({ background: "#ffffff" }).png().toFile(outPath);
 }
 
 async function main() {
@@ -197,7 +217,8 @@ async function main() {
   await svgToPng(socialSvg(1200, 630, avatarSources), join(websitePublic, "social-image.png"));
 
   await svgToPng(browserGraphic, join(storeDir, "screenshot-1.png"), 1280, 800);
-  await svgToPng(socialSvg(1200, 630, avatarSources), join(storeDir, "promo-small.png"), 440, 280);
+  await svgToPng(promoSmallSvg(440, 280, avatarSources), join(storeDir, "promo-small.png"));
+  await svgToPng(socialSvg(1200, 630, avatarSources), join(storeDir, "promo-marquee.png"), 1400, 560);
 
   console.log("Generated Jamful brand, website, social, and Chrome Store assets.");
 }
