@@ -83,7 +83,10 @@ function Home() {
   return (
     <main className="min-h-screen">
       <SiteHeader>
-        <a className={cn(buttonVariants({ variant: "ghost" }))} href="#extension">
+        <a
+          className={cn(buttonVariants({ variant: "ghost" }))}
+          href="#extension"
+        >
           Extension
         </a>
         <Button>
@@ -94,15 +97,14 @@ function Home() {
 
       <section className="mx-auto grid w-full max-w-6xl items-center gap-10 px-6 py-12 lg:grid-cols-[1fr_520px] lg:py-20">
         <div className="flex flex-col items-start gap-6">
-          <Badge variant="secondary">Browser presence for games</Badge>
+          <Badge variant="secondary">Made for Vibe Jam 2026</Badge>
           <div className="flex flex-col gap-4">
             <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-balance md:text-6xl">
-              See what your friends are playing right now.
+              See what games the people you follow are playing.
             </h1>
             <p className="max-w-xl text-lg text-muted-foreground text-pretty">
-              Jamful turns your browser into a lightweight game activity feed,
-              so you can discover what people you follow are playing and jump in
-              when the moment is live.
+              Jamful turns your browser into a game activity feed, so you can
+              jump into the games the people you follow are playing.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
