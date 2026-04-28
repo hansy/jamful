@@ -24,15 +24,15 @@ import {
 import type { GraphSyncQueueMessage, JWTPayload, PresenceQueueMessage } from "./types";
 import { UserPresenceDO } from "./user-presence-do";
 import {
+  followJamfulUser,
   getGraphStatus,
-  queueGraphSyncRun,
+  listDirectoryUsers,
+  unfollowJamfulUser,
   upsertOAuthCredential,
   upsertUserFromX,
 } from "./users";
 
 export { UserPresenceDO };
-
-const MANUAL_FOLLOWINGS_SYNC_MIN_INTERVAL_MS = 60_000;
 
 function corsHeaders(origin: string | null): HeadersInit {
   return {
@@ -204,7 +204,6 @@ export default {
           encrypted,
           xTokens.scope ?? null,
         );
-        await queueGraphSyncRun(env.JAMFUL_D1, env.GRAPH_SYNC_QUEUE, user.id, "initial");
         const payload: JWTPayload = {
           sub: user.id,
           xid: me.id,
@@ -247,23 +246,12 @@ export default {
     if (path === "/graph/resync" && request.method === "POST") {
       const user = await authUser(request, env);
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
-      const { run, throttled } = await queueGraphSyncRun(
-        env.JAMFUL_D1,
-        env.GRAPH_SYNC_QUEUE,
-        user.sub,
-        "manual",
-        { minIntervalMs: MANUAL_FOLLOWINGS_SYNC_MIN_INTERVAL_MS },
-      );
-      const status = await getGraphStatus(env.JAMFUL_D1, user.sub);
       return json(
         {
-          sync_run_id: run.id,
-          status: run.status,
-          requested_at: run.requested_at,
-          last_synced_at: status.last_synced_at,
-          throttled,
+          error: "graph_sync_removed",
+          message: "X followings sync is no longer supported.",
         },
-        throttled ? 200 : run.status === "queued" ? 202 : 200,
+        410,
         origin,
       );
     }
@@ -280,6 +268,37 @@ export default {
       if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
       const games = getRegistryGames();
       return json(games, 200, origin);
+    }
+
+    if (path === "/users/directory" && request.method === "GET") {
+      const user = await authUser(request, env);
+      if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
+      const users = await listDirectoryUsers(
+        env.JAMFUL_D1,
+        user.sub,
+        url.searchParams.get("q") ?? "",
+      );
+      return json({ users }, 200, origin);
+    }
+
+    const followMatch = path.match(/^\/users\/([^/]+)\/follow$/);
+    if (followMatch && (request.method === "POST" || request.method === "DELETE")) {
+      const user = await authUser(request, env);
+      if (!user?.sub) return json({ error: "unauthorized" }, 401, origin);
+      const targetUserId = decodeURIComponent(followMatch[1] ?? "");
+      if (!targetUserId) {
+        return json({ error: "invalid_user", message: "User id required" }, 400, origin);
+      }
+
+      if (request.method === "POST") {
+        const followed = await followJamfulUser(env.JAMFUL_D1, user.sub, targetUserId);
+        if (!followed) {
+          return json({ error: "invalid_user", message: "User not found" }, 404, origin);
+        }
+      } else {
+        await unfollowJamfulUser(env.JAMFUL_D1, user.sub, targetUserId);
+      }
+      return json({ ok: true }, 200, origin);
     }
 
     if (path === "/presence/heartbeat" && request.method === "POST") {

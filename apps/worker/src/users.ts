@@ -1,4 +1,5 @@
 import type {
+  DirectoryUser,
   GraphStatusResponse,
   GraphSyncRunSummary,
   GraphSyncStatus,
@@ -43,6 +44,10 @@ type GraphSyncRunRow = {
   finished_at: number | null;
   jamful_edges_found: number | null;
   error_message: string | null;
+};
+
+type DirectoryUserRow = Omit<DirectoryUser, "is_following"> & {
+  is_following: 0 | 1;
 };
 
 function mapRun(row: GraphSyncRunRow | null): GraphSyncRunSummary | null {
@@ -521,4 +526,87 @@ export async function lookupJamfulUserIdsByXUserIds(
     }
   }
   return [...out];
+}
+
+export async function listDirectoryUsers(
+  db: D1Database,
+  currentUserId: string,
+  query: string,
+  limit = 50,
+): Promise<DirectoryUser[]> {
+  const normalizedLimit = Math.max(1, Math.min(Math.floor(limit), 100));
+  const trimmed = query.trim().replace(/^@/, "");
+  const params: unknown[] = [currentUserId, currentUserId];
+  let where = "u.id != ?";
+
+  if (trimmed) {
+    where += " AND (u.x_username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')";
+    const escaped = trimmed.replace(/[\\%_]/g, "\\$&");
+    params.push(`%${escaped}%`, `%${escaped}%`);
+  }
+
+  const rows = await db
+    .prepare(
+      `SELECT
+        u.id,
+        u.x_username,
+        u.display_name AS name,
+        u.avatar_url,
+        CASE WHEN e.followee_user_id IS NULL THEN 0 ELSE 1 END AS is_following
+      FROM users u
+      LEFT JOIN jamful_follow_edges e
+        ON e.follower_user_id = ?
+        AND e.followee_user_id = u.id
+      WHERE ${where}
+      ORDER BY is_following DESC, u.last_login_at DESC
+      LIMIT ?`,
+    )
+    .bind(...params, normalizedLimit)
+    .all<DirectoryUserRow>();
+
+  return rows.results.map((row) => ({
+    id: row.id,
+    x_username: row.x_username,
+    name: row.name,
+    avatar_url: row.avatar_url,
+    is_following: Boolean(row.is_following),
+  }));
+}
+
+export async function followJamfulUser(
+  db: D1Database,
+  followerUserId: string,
+  followeeUserId: string,
+  at = Date.now(),
+): Promise<boolean> {
+  if (followerUserId === followeeUserId) return false;
+  const followee = await getUserById(db, followeeUserId);
+  if (!followee) return false;
+
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO jamful_follow_edges (
+        follower_user_id,
+        followee_user_id,
+        source_provider,
+        synced_at
+      ) VALUES (?, ?, 'jamful', ?)`,
+    )
+    .bind(followerUserId, followeeUserId, at)
+    .run();
+  return true;
+}
+
+export async function unfollowJamfulUser(
+  db: D1Database,
+  followerUserId: string,
+  followeeUserId: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `DELETE FROM jamful_follow_edges
+      WHERE follower_user_id = ? AND followee_user_id = ?`,
+    )
+    .bind(followerUserId, followeeUserId)
+    .run();
 }

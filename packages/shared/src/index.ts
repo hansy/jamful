@@ -39,6 +39,18 @@ export type FeedEntry = {
   session_id: string;
 };
 
+export type DirectoryUser = {
+  id: string;
+  x_username: string;
+  name: string;
+  avatar_url: string;
+  is_following: boolean;
+};
+
+export type DirectoryUsersResponse = {
+  users: DirectoryUser[];
+};
+
 export type GraphSyncStatus =
   | "never"
   | "queued"

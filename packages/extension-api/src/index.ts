@@ -1,5 +1,6 @@
 import type {
   AuthenticatedUser,
+  DirectoryUsersResponse,
   FeedEntry,
   Game,
   GraphStatusResponse,
@@ -24,14 +25,6 @@ export type XTokenResponse = AuthTokens & {
     last_synced_at: number | null;
     error_message: string | null;
   };
-};
-
-export type GraphResyncResponse = {
-  sync_run_id: string;
-  status: GraphStatusResponse["status"];
-  requested_at: number;
-  last_synced_at: number | null;
-  throttled?: boolean;
 };
 
 type ApiErrorBody = {
@@ -122,14 +115,30 @@ export class JamfulApiClient {
     return this.request<FeedEntry[]>("/feed");
   }
 
-  async getGraphStatus(): Promise<GraphStatusResponse> {
-    return this.request<GraphStatusResponse>("/graph/status");
+  async getDirectoryUsers(query = ""): Promise<DirectoryUsersResponse> {
+    const params = new URLSearchParams();
+    const trimmed = query.trim();
+    if (trimmed) params.set("q", trimmed);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return this.request<DirectoryUsersResponse>(`/users/directory${suffix}`);
   }
 
-  async resyncGraph(): Promise<GraphResyncResponse> {
-    return this.request<GraphResyncResponse>("/graph/resync", {
-      method: "POST",
-    });
+  async followUser(userId: string): Promise<{ ok: true }> {
+    return this.request<{ ok: true }>(
+      `/users/${encodeURIComponent(userId)}/follow`,
+      { method: "POST" },
+    );
+  }
+
+  async unfollowUser(userId: string): Promise<{ ok: true }> {
+    return this.request<{ ok: true }>(
+      `/users/${encodeURIComponent(userId)}/follow`,
+      { method: "DELETE" },
+    );
+  }
+
+  async getGraphStatus(): Promise<GraphStatusResponse> {
+    return this.request<GraphStatusResponse>("/graph/status");
   }
 
   async getXAuthorizationUrl(body: {
