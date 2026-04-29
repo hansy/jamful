@@ -28,8 +28,8 @@ const faqs = [
     answer: (
       <>
         No. Unfortunately the X API makes syncing your existing social graph
-        expensive, so for now, you have to manually find people who have already
-        installed the extension to see what games they are playing.
+        expensive (🙄), so for now, you have to manually find people who have
+        already installed the extension to see what games they are playing.
       </>
     ),
   },
