@@ -6,6 +6,8 @@ export const PRODUCT_METADATA = {
   description:
     "See what games the people you follow are playing and jump in from your browser.",
   chromeStoreSummary: "See when people you follow are playing supported web games.",
+  chromeStoreUrl:
+    "https://chromewebstore.google.com/detail/jamful/inokkjgpmlfdlojccnpcopcdfoghgffa",
   repositoryUrl: "https://github.com/hansy/jamful",
   feedbackEmail: "feedback@jamful.social",
   socialImagePath: "/social-image.png",

@@ -5,7 +5,7 @@ import { PRODUCT_METADATA } from "@jamful/shared";
 import { ExternalLink, Plus } from "lucide-react";
 
 import { Badge } from "#/components/ui/badge";
-import { Button, buttonVariants } from "#/components/ui/button";
+import { buttonVariants } from "#/components/ui/button";
 import {
   Accordion,
   AccordionContent,
@@ -59,13 +59,20 @@ const faqs = [
 ];
 
 function Home() {
+  const extensionLinkClassName = cn(buttonVariants({ size: "lg" }));
+
   return (
     <main className="min-h-screen">
       <SiteHeader>
-        <Button>
+        <a
+          className={cn(buttonVariants())}
+          href={PRODUCT_METADATA.chromeStoreUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
           <Plus data-icon="inline-start" />
           Add extension
-        </Button>
+        </a>
       </SiteHeader>
 
       <section className="mx-auto grid w-full max-w-6xl items-center gap-10 px-6 py-12 lg:grid-cols-[1fr_520px] lg:py-20">
@@ -81,10 +88,15 @@ function Home() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button size="lg">
+            <a
+              className={extensionLinkClassName}
+              href={PRODUCT_METADATA.chromeStoreUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
               <Plus data-icon="inline-start" />
               Add extension
-            </Button>
+            </a>
             <a
               className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
               href="https://vibej.am"
