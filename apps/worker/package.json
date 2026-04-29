@@ -7,10 +7,10 @@
     "dev": "bun run dev:setup && bun run migrate:local && portless api.jamful sh -c 'wrangler dev --ip \"${HOST:-127.0.0.1}\" --port \"${PORT:-8787}\"'",
     "dev:setup": "bun ./scripts/dev-setup.ts",
     "build": "wrangler deploy --dry-run",
-    "build:production": "wrangler deploy --dry-run --secrets-file .env.production",
+    "build:production": "wrangler deploy --dry-run",
     "migrate:local": "wrangler d1 migrations apply JAMFUL_D1 --local",
     "migrate:production": "wrangler d1 migrations apply JAMFUL_D1 --remote",
-    "deploy:production": "wrangler deploy --secrets-file .env.production",
+    "deploy:production": "wrangler deploy",
     "deploy": "bun run build:production && bun run migrate:production && bun run deploy:production",
     "cf-types": "wrangler types",
     "typecheck": "tsc --noEmit -p tsconfig.json"
