@@ -51,6 +51,28 @@ the upload zip:
 WXT_API_BASE_URL=https://api.jamful.social bun run zip:extension
 ```
 
+Before uploading a new Chrome Store package, bump the extension version:
+
+```bash
+bun run version:extension
+```
+
+This regenerates `data/registry.v1.json`, checks for extension-shipped changes
+including bundled game list changes, and bumps `apps/extension/package.json`.
+The default bump is patch. Use `-- --minor`, `-- --major`, or `-- --force` when
+needed:
+
+```bash
+bun run version:extension -- --minor
+bun run version:extension -- --force
+```
+
+To bump and build the Chrome upload zip in one command:
+
+```bash
+bun run release:extension
+```
+
 Firefox uses a separate package:
 
 ```bash

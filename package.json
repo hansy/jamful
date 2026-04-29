@@ -21,6 +21,8 @@
     "deploy:worker": "bun run --cwd apps/worker deploy",
     "assets:brand": "bun scripts/generate-brand-assets.ts",
     "registry": "bun scripts/build-registry.ts",
+    "version:extension": "bun scripts/bump-extension-version.ts",
+    "release:extension": "bun run version:extension && WXT_API_BASE_URL=https://api.jamful.social bun run zip:extension",
     "dev:worker": "bun run --cwd apps/worker dev",
     "dev:website": "bun run --cwd apps/website dev",
     "dev:extension": "bun run --cwd apps/extension dev",

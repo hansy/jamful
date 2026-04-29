@@ -12,7 +12,32 @@ type SeedRow = {
   game_url: string;
 };
 
+type RegistryPayload = {
+  games: Array<{
+    id: string;
+    name: string;
+    url: string;
+    icon_url: string;
+  }>;
+  updated_at: number;
+};
+
 const root = fileURLToPath(new URL("..", import.meta.url));
+
+async function readExistingRegistry(
+  outPath: string,
+): Promise<RegistryPayload | null> {
+  try {
+    const raw = await readFile(outPath, "utf-8");
+    const parsed = JSON.parse(raw) as Partial<RegistryPayload>;
+    if (!Array.isArray(parsed.games) || typeof parsed.updated_at !== "number") {
+      return null;
+    }
+    return parsed as RegistryPayload;
+  } catch {
+    return null;
+  }
+}
 
 async function main(): Promise<void> {
   const raw = await readFile(join(root, "data/games.json"), "utf-8");
@@ -23,10 +48,15 @@ async function main(): Promise<void> {
     url: row.game_url.replace(/\/+$/, "") || row.game_url,
     icon_url: "",
   }));
-  const payload = { games, updated_at: Date.now() };
   const outDir = join(root, "data");
   await mkdir(outDir, { recursive: true });
   const outPath = join(outDir, "registry.v1.json");
+  const existing = await readExistingRegistry(outPath);
+  const updatedAt =
+    existing && JSON.stringify(existing.games) === JSON.stringify(games)
+      ? existing.updated_at
+      : Date.now();
+  const payload: RegistryPayload = { games, updated_at: updatedAt };
   await writeFile(outPath, JSON.stringify(payload, null, 0), "utf-8");
   console.log(`Wrote ${games.length} games to ${outPath}`);
 }
